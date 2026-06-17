@@ -131,6 +131,46 @@ local function normalizeImageSize(image, targetW, targetH)
     return out
 end
 
+local function fitImagePreserveAspect(image, targetW, targetH, fillColor)
+    local srcW, srcH = imageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    local scaleX = targetW / srcW
+    local scaleY = targetH / srcH
+    local scale = math.min(scaleX, scaleY)
+    if scale <= 0 then
+        return nil
+    end
+
+    local fitW = math.max(1, math.floor(srcW * scale + 0.5))
+    local fitH = math.max(1, math.floor(srcH * scale + 0.5))
+    local resized = normalizeImageSize(image, fitW, fitH)
+    if not resized then
+        return nil
+    end
+
+    local out = {}
+    local offsetX = math.floor((targetW - fitW) / 2)
+    local offsetY = math.floor((targetH - fitH) / 2)
+
+    for y = 1, targetH do
+        out[y] = {}
+        for x = 1, targetW do
+            out[y][x] = fillColor
+        end
+    end
+
+    for y = 1, fitH do
+        for x = 1, fitW do
+            out[y + offsetY][x + offsetX] = resized[y][x]
+        end
+    end
+
+    return out
+end
+
 local function inBox(x, y, bx, by, bw, bh)
     return x >= bx and x <= bx + bw - 1 and y >= by and y <= by + bh - 1
 end
@@ -237,6 +277,17 @@ function Game:computeLayout()
 
     local cashY = buttonY1 - 4
 
+    while true do
+        local infoTotalY = self.playerY + self.cardH + 1
+        local infoHouseY = infoTotalY + 2
+        if infoHouseY < cashY - 1 or self.cardH <= MIN_CARD_H then
+            break
+        end
+        self.cardH = self.cardH - 1
+        self.playerY = self.dealerY + self.cardH + 6
+        self.playerLabelY = self.playerY - 3
+    end
+
     self.hitBox = {x = 3, y = buttonY1, w = 12, h = 3}
     self.standBox = {x = 21, y = buttonY1, w = 12, h = 3}
     self.doubleBox = {x = 3, y = buttonY2, w = 12, h = 3}
@@ -305,7 +356,7 @@ function Game:drawCardImage(x, y, basename)
             return false
         end
 
-        local normalized = normalizeImageSize(loaded, self.cardW, self.cardH)
+        local normalized = fitImagePreserveAspect(loaded, self.cardW, self.cardH, colors.white)
         if not normalized then
             self.cardImageCache[path] = false
             return false
@@ -333,23 +384,7 @@ function Game:cardX(index)
 end
 
 function Game:drawCardLabelOverlay(x, y, card)
-    local label = card.rank .. card.suit
-
-    self.monitor.setBackgroundColor(colors.white)
-    self.monitor.setTextColor(colors.black)
-
-    self.monitor.setCursorPos(x + 1, y + 1)
-    self.monitor.write(label)
-
-    local rightX = x + self.cardW - #label - 1
-    local bottomY = y + self.cardH - 2
-    if rightX >= x + 1 and bottomY >= y + 1 then
-        self.monitor.setCursorPos(rightX, bottomY)
-        self.monitor.write(label)
-    end
-
-    self.monitor.setBackgroundColor(colors.green)
-    self.monitor.setTextColor(colors.white)
+    -- Intentionally left empty: preserving original art without overlay text.
 end
 
 function Game:drawCard(x, y, card)
