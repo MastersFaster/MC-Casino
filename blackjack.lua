@@ -11,11 +11,20 @@ local function loadLocalModule(moduleName)
     local running = shell.getRunningProgram and shell.getRunningProgram() or ""
     local resolved = shell.resolve and shell.resolve(running) or running
     local scriptDir = fs.getDir(resolved)
+    local projectDir = fs.getDir(scriptDir)
     local modulePath = string.gsub(moduleName, "%%.", "/") .. ".lua"
-    local candidate = fs.combine(scriptDir, modulePath)
+    local candidates = {
+        fs.combine("/rootfs", modulePath),
+        fs.combine("rootfs", modulePath),
+        fs.combine("/", modulePath),
+        fs.combine(projectDir, modulePath),
+        fs.combine(scriptDir, modulePath)
+    }
 
-    if fs.exists(candidate) then
-        return dofile(candidate)
+    for _, candidate in ipairs(candidates) do
+        if fs.exists(candidate) then
+            return dofile(candidate)
+        end
     end
 
     error(moduleOrErr)
