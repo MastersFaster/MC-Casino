@@ -200,7 +200,7 @@ function Layout.resolve(config)
     end
 
     if not houseName or not playerName then
-        error("Two chests are required: house chest and player chest. Peripherals seen: " .. peripheralSummary())
+        error("Two chests are required: house chest and player chest. Only adjacent or modem-network peripherals are visible to ComputerCraft. If your second chest is next to the first chest (not next to the computer), attach a wired modem to that chest and to the computer, or move the second chest to an adjacent computer side. Peripherals seen: " .. peripheralSummary())
     end
 
     return {
