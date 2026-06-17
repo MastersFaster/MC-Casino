@@ -150,7 +150,19 @@ function Currency:getPlayerMoney()
     return self:count(self.playerInventory)
 end
 
-function Currency:takeBet(amount)
+function Currency:getHouseMoney()
+    return self:count(self.houseInventory)
+end
+
+function Currency:playerCanCover(amount)
+    return self:getPlayerMoney() >= amount
+end
+
+function Currency:houseCanCover(amount)
+    return self:getHouseMoney() >= amount
+end
+
+function Currency:settleLoss(amount)
     return self:move(
         self.playerInventory,
         self.houseInventory,
@@ -160,7 +172,7 @@ function Currency:takeBet(amount)
     )
 end
 
-function Currency:payOut(amount)
+function Currency:settleWin(amount)
     return self:move(
         self.houseInventory,
         self.playerInventory,
@@ -168,6 +180,15 @@ function Currency:payOut(amount)
         self.houseInventoryName,
         self.playerInventoryName
     )
+end
+
+-- Backwards-compatible aliases.
+function Currency:takeBet(amount)
+    return self:settleLoss(amount)
+end
+
+function Currency:payOut(amount)
+    return self:settleWin(amount)
 end
 
 return Currency

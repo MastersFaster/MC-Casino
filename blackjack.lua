@@ -51,6 +51,36 @@ local function printPeripheralBootInfo()
     end
 end
 
+local function getScriptDir()
+    if not shell or not fs then
+        return "."
+    end
+
+    local running = shell.getRunningProgram and shell.getRunningProgram() or ""
+    local resolved = shell.resolve and shell.resolve(running) or running
+    return fs.getDir(resolved)
+end
+
+local function resolveCardsDir()
+    if not fs then return nil end
+
+    local scriptDir = getScriptDir()
+    local candidates = {
+        fs.combine("/MC-Casino", "cards"),
+        fs.combine("MC-Casino", "cards"),
+        fs.combine(scriptDir, "cards"),
+        "/cards"
+    }
+
+    for _, path in ipairs(candidates) do
+        if fs.exists(path) and fs.isDir(path) then
+            return path
+        end
+    end
+
+    return nil
+end
+
 local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
@@ -121,9 +151,10 @@ function Game.new(config)
     self.layout = Layout.resolve(config.layout)
     self.monitor = self.layout.monitor
     self.monitorName = self.layout.monitorName
+    self.monitorScale = config.monitorScale or 0.5
 
     Layout.prepareMonitor(self.monitor, {
-        scale = config.monitorScale or 0.5,
+        scale = self.monitorScale,
         background = colors.green,
         text = colors.white
     })
@@ -139,7 +170,79 @@ function Game.new(config)
     })
     self.currency:validateTransferRoutes()
 
+    self.cardsDir = resolveCardsDir()
+    self.cardImageCache = {}
+    self.imageSupportChecked = false
+    self.canDrawImages = false
+
     return self
+end
+
+function Game:ensureImageSupport()
+    if self.imageSupportChecked then
+        return self.canDrawImages
+    end
+
+    self.imageSupportChecked = true
+    self.canDrawImages = paintutils and paintutils.loadImage and paintutils.drawImage and self.cardsDir ~= nil
+    return self.canDrawImages
+end
+
+function Game:cardAssetName(card)
+    local suitMap = {
+        S = "spades",
+        H = "hearts",
+        C = "clubs",
+        D = "diamonds"
+    }
+
+    local rankMap = {
+        A = 1,
+        J = 11,
+        Q = 12,
+        K = 13
+    }
+
+    local suit = suitMap[card.suit]
+    local rank = rankMap[card.rank] or tonumber(card.rank)
+
+    if not suit or not rank then
+        return nil
+    end
+
+    return string.format("%s_%d.png", suit, rank)
+end
+
+function Game:drawCardImage(x, y, filename)
+    if not self:ensureImageSupport() then
+        return false
+    end
+
+    local path = fs.combine(self.cardsDir, filename)
+    if not fs.exists(path) then
+        return false
+    end
+
+    local image = self.cardImageCache[path]
+    if image == false then
+        return false
+    end
+
+    if not image then
+        local ok, loaded = pcall(paintutils.loadImage, path)
+        if not ok or not loaded then
+            self.cardImageCache[path] = false
+            return false
+        end
+        image = loaded
+        self.cardImageCache[path] = image
+    end
+
+    local previous = term.current()
+    term.redirect(self.monitor)
+    local ok = pcall(paintutils.drawImage, image, x, y)
+    term.redirect(previous)
+    return ok
 end
 
 function Game:centerText(y, text)
@@ -153,6 +256,11 @@ function Game:cardX(index)
 end
 
 function Game:drawCard(x, y, card)
+    local cardAsset = self:cardAssetName(card)
+    if cardAsset and self:drawCardImage(x, y, cardAsset) then
+        return
+    end
+
     self.monitor.setBackgroundColor(colors.white)
     self.monitor.setTextColor(colors.black)
 
@@ -178,6 +286,10 @@ function Game:drawCard(x, y, card)
 end
 
 function Game:drawHiddenCard(x, y)
+    if self:drawCardImage(x, y, "spades_0.png") then
+        return
+    end
+
     self.monitor.setBackgroundColor(colors.white)
     self.monitor.setTextColor(colors.black)
 
@@ -216,7 +328,7 @@ function Game:drawButton(x, y, w, label)
     self.monitor.setTextColor(colors.white)
 end
 
-function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money, bet)
+function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money, bet, houseMoney)
     self.monitor.clear()
 
     self:centerText(2, "BLACKJACK CASINO")
@@ -246,6 +358,9 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
     self.monitor.setCursorPos(3, 25)
     self.monitor.write("Iron: " .. money .. "  Bet: " .. bet)
 
+    self.monitor.setCursorPos(3, 26)
+    self.monitor.write("House: " .. houseMoney)
+
     self:drawButton(CASH_BOX.x, CASH_BOX.y, CASH_BOX.w, "Cashout")
     self:drawButton(HIT_BOX.x, HIT_BOX.y, HIT_BOX.w, "Hit")
     self:drawButton(STAND_BOX.x, STAND_BOX.y, STAND_BOX.w, "Stand")
@@ -253,11 +368,26 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
     self:drawButton(QUIT_BOX.x, QUIT_BOX.y, QUIT_BOX.w, "Quit")
 end
 
-function Game:getRoundBet(money)
+function Game:getRoundBet(money, houseMoney)
     local bet = self.baseBet
     if bet > money then bet = money end
+    if bet > houseMoney then bet = houseMoney end
     if bet < 1 then bet = 1 end
     return bet
+end
+
+function Game:showOutOfService(message)
+    self.monitor.setBackgroundColor(colors.red)
+    self.monitor.setTextColor(colors.white)
+    self.monitor.clear()
+    self:centerText(math.floor(self.monitorHeight / 2) - 1, "OUT OF SERVICE")
+    self:centerText(math.floor(self.monitorHeight / 2) + 1, message or "House chest is empty.")
+    sleep(4)
+    Layout.prepareMonitor(self.monitor, {
+        scale = self.monitorScale,
+        background = colors.green,
+        text = colors.white
+    })
 end
 
 function Game:showMessage(text, seconds)
@@ -277,15 +407,24 @@ end
 
 function Game:playRound()
     local money = self.currency:getPlayerMoney()
+    local houseMoney = self.currency:getHouseMoney()
+
     if money <= 0 then
         self:showMessage("Insert iron into hopper to play.", 3)
         return true
     end
 
-    local bet = self:getRoundBet(money)
-    if not self.currency:takeBet(bet) then
-        self:showMessage("Not enough iron for bet.", 2)
-        return true
+    if houseMoney <= 0 then
+        self:showOutOfService("House chest empty. Cashing out.")
+        self:showMessage("Cashout: take iron from player chest.", 3)
+        return false
+    end
+
+    local bet = self:getRoundBet(money, houseMoney)
+    if bet > houseMoney then
+        self:showOutOfService("House cannot cover bets.")
+        self:showMessage("Cashout: take iron from player chest.", 3)
+        return false
     end
 
     local deck = newDeck()
@@ -302,9 +441,14 @@ function Game:playRound()
     while true do
         local playerTotal = handValue(player)
         money = self.currency:getPlayerMoney()
-        self:drawTable(player, dealer, revealDealer, playerTotal, money, bet)
+        houseMoney = self.currency:getHouseMoney()
+        self:drawTable(player, dealer, revealDealer, playerTotal, money, bet, houseMoney)
 
         if playerTotal > 21 then
+            if not self.currency:settleLoss(bet) then
+                self:showMessage("Loss transfer failed.", 3)
+                return false
+            end
             self.monitor.setCursorPos(3, 27)
             self.monitor.write("Bust! You lose.")
             sleep(2)
@@ -325,7 +469,7 @@ function Game:playRound()
             revealDealer = true
             while handValue(dealer) < 17 do
                 table.insert(dealer, table.remove(deck))
-                self:drawTable(player, dealer, true, playerTotal, money, bet)
+                self:drawTable(player, dealer, true, playerTotal, money, bet, houseMoney)
                 sleep(0.3)
             end
 
@@ -334,27 +478,40 @@ function Game:playRound()
 
             if dealerTotal > 21 or playerTotal > dealerTotal then
                 result = "You win!"
-                self.currency:payOut(bet * 2)
+                if not self.currency:houseCanCover(bet) then
+                    self:showOutOfService("House cannot pay winnings.")
+                    self:showMessage("Cashout: take iron from player chest.", 3)
+                    return false
+                end
+                if not self.currency:settleWin(bet) then
+                    self:showOutOfService("Payout transfer failed.")
+                    self:showMessage("Cashout: take iron from player chest.", 3)
+                    return false
+                end
             elseif playerTotal < dealerTotal then
                 result = "You lose."
-            else
-                self.currency:payOut(bet)
+                if not self.currency:settleLoss(bet) then
+                    self:showMessage("Loss transfer failed.", 3)
+                    return false
+                end
             end
 
             money = self.currency:getPlayerMoney()
-            self:drawTable(player, dealer, true, playerTotal, money, bet)
+            houseMoney = self.currency:getHouseMoney()
+            self:drawTable(player, dealer, true, playerTotal, money, bet, houseMoney)
             self.monitor.setCursorPos(3, 27)
             self.monitor.write(result)
             sleep(2)
             return true
         elseif inBox(x, y, DOUBLE_BOX.x, DOUBLE_BOX.y, DOUBLE_BOX.w, DOUBLE_BOX.h) then
-            if canDouble and self.currency:getPlayerMoney() >= bet and self.currency:takeBet(bet) then
-                bet = bet * 2
+            local proposedBet = bet * 2
+            if canDouble and self.currency:playerCanCover(proposedBet) and self.currency:houseCanCover(proposedBet) then
+                bet = proposedBet
                 table.insert(player, table.remove(deck))
                 canDouble = false
             else
                 self.monitor.setCursorPos(3, 27)
-                self.monitor.write("Cannot double right now.")
+                self.monitor.write("Cannot double (funds/house limit).")
                 sleep(1)
             end
         elseif inBox(x, y, QUIT_BOX.x, QUIT_BOX.y, QUIT_BOX.w, QUIT_BOX.h) then
