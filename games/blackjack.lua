@@ -14,6 +14,8 @@ local function loadLocalModule(moduleName)
     local projectDir = fs.getDir(scriptDir)
     local modulePath = string.gsub(moduleName, "%%.", "/") .. ".lua"
     local candidates = {
+        fs.combine("/MC-Casino", modulePath),
+        fs.combine("MC-Casino", modulePath),
         fs.combine("/rootfs", modulePath),
         fs.combine("rootfs", modulePath),
         fs.combine("/", modulePath),
@@ -27,7 +29,7 @@ local function loadLocalModule(moduleName)
         end
     end
 
-    error(moduleOrErr)
+    error(moduleOrErr .. "\nTried paths: " .. table.concat(candidates, ", "))
 end
 
 local Layout = loadLocalModule("casino.layout")
