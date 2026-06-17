@@ -133,7 +133,9 @@ function Game.new(config)
     self.currency = Currency.new({
         itemName = config.currencyItem or "minecraft:iron_ingot",
         playerInventory = self.layout.playerChest,
-        houseInventory = self.layout.houseChest
+        houseInventory = self.layout.houseChest,
+        playerInventoryName = self.layout.playerChestName,
+        houseInventoryName = self.layout.houseChestName
     })
 
     return self
