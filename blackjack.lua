@@ -462,6 +462,8 @@ function Game.new(config)
     self.monitorWidth, self.monitorHeight = self.monitor.getSize()
     self:computeLayout()
 
+    print(self.cardW, self.cardH)
+
     self.currency = Currency.new({
         itemName = config.currencyItem or "minecraft:iron_ingot",
         playerInventory = self.layout.playerChest,
