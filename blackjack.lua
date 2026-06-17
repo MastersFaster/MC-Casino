@@ -1219,6 +1219,33 @@ function Game:pulseDropperByItemCount(itemCount)
         return 0, "empty"
     end
 
+    local dropMethods = {"drop", "dropDown", "dropUp", "dropSide"}
+    if self.dropper then
+        for _, methodName in ipairs(dropMethods) do
+            local dropMethod = self.dropper[methodName]
+            if type(dropMethod) == "function" then
+                local pulses = 0
+                for _ = 1, itemCount do
+                    local ok, moved = pcall(function()
+                        return dropMethod(self.dropper, 1)
+                    end)
+
+                    if not ok then
+                        return pulses, "drop_method_failed"
+                    end
+
+                    if moved == false then
+                        return pulses, "drop_method_blocked"
+                    end
+
+                    pulses = pulses + 1
+                end
+
+                return pulses, nil
+            end
+        end
+    end
+
     if not redstone then
         return 0, "no_redstone"
     end
