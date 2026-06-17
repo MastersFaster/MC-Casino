@@ -451,7 +451,7 @@ function Game.new(config)
     self.layout = Layout.resolve(config.layout)
     self.monitor = self.layout.monitor
     self.monitorName = self.layout.monitorName
-    self.monitorScale = config.monitorScale or 0.5
+    self.monitorScale = config.monitorScale or 1
 
     Layout.prepareMonitor(self.monitor, {
         scale = self.monitorScale,
@@ -506,7 +506,7 @@ function Game:computeLayout()
     local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
-    local maxCardHByHeight = math.floor((buttonY1 - 24) / 2)
+    local maxCardHByHeight = math.floor((buttonY1 - 12) / 2)
     if maxCardHByHeight < MIN_CARD_H then
         maxCardHByHeight = MIN_CARD_H
     end
@@ -1111,7 +1111,7 @@ printPeripheralBootInfo()
 local game = Game.new({
     baseBet = 5,
     currencyItem = "minecraft:iron_ingot",
-    monitorScale = 0.5,
+    monitorScale = 1,
     cardScale = 2,
     layout = {
         -- Standard casino machine format:
