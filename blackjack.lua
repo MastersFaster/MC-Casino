@@ -81,6 +81,21 @@ local function resolveCardsDir()
     return nil
 end
 
+local function readAllText(path)
+    if not fs or not fs.exists(path) then
+        return nil
+    end
+
+    local handle = fs.open(path, "r")
+    if not handle then
+        return nil
+    end
+
+    local content = handle.readAll()
+    handle.close()
+    return content
+end
+
 local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
@@ -131,6 +146,51 @@ local function normalizeImageSize(image, targetW, targetH)
     return out
 end
 
+local function blitImageSize(image)
+    local h = #image
+    if h == 0 then
+        return 0, 0
+    end
+
+    local firstRow = image[1]
+    if type(firstRow) ~= "table" or type(firstRow[1]) ~= "string" then
+        return 0, 0
+    end
+
+    return #firstRow[1], h
+end
+
+local function normalizeBlitImageSize(image, targetW, targetH)
+    local srcW, srcH = blitImageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    if srcW == targetW and srcH == targetH then
+        return image
+    end
+
+    local out = {}
+
+    for y = 1, targetH do
+        local sourceY = clamp(math.floor(((y - 0.5) * srcH / targetH) + 0.5), 1, srcH)
+        local srcRow = image[sourceY]
+        local text, fg, bg = srcRow[1], srcRow[2], srcRow[3]
+
+        local textOut, fgOut, bgOut = {}, {}, {}
+        for x = 1, targetW do
+            local sourceX = clamp(math.floor(((x - 0.5) * srcW / targetW) + 0.5), 1, srcW)
+            textOut[x] = text:sub(sourceX, sourceX)
+            fgOut[x] = fg:sub(sourceX, sourceX)
+            bgOut[x] = bg:sub(sourceX, sourceX)
+        end
+
+        out[y] = {table.concat(textOut), table.concat(fgOut), table.concat(bgOut)}
+    end
+
+    return out
+end
+
 local function fitImagePreserveAspect(image, targetW, targetH, fillColor)
     local srcW, srcH = imageSize(image)
     if srcW <= 0 or srcH <= 0 then
@@ -166,6 +226,168 @@ local function fitImagePreserveAspect(image, targetW, targetH, fillColor)
         for x = 1, fitW do
             out[y + offsetY][x + offsetX] = resized[y][x]
         end
+    end
+
+    return out
+end
+
+local function blitImageSize(image)
+    local h = #image
+    local w = 0
+
+    if h > 0 and type(image[1]) == "table" and type(image[1][1]) == "string" then
+        w = #image[1][1]
+    end
+
+    return w, h
+end
+
+local function normalizeBlitImageSize(image, targetW, targetH)
+    local srcW, srcH = blitImageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    if srcW == targetW and srcH == targetH then
+        return image
+    end
+
+    local out = {}
+
+    for y = 1, targetH do
+        local sourceY = clamp(math.floor(((y - 0.5) * srcH / targetH) + 0.5), 1, srcH)
+        local srcRow = image[sourceY]
+        local srcText, srcFg, srcBg = srcRow[1], srcRow[2], srcRow[3]
+
+        local textChars = {}
+        local fgChars = {}
+        local bgChars = {}
+
+        for x = 1, targetW do
+            local sourceX = clamp(math.floor(((x - 0.5) * srcW / targetW) + 0.5), 1, srcW)
+            textChars[x] = string.sub(srcText, sourceX, sourceX)
+            fgChars[x] = string.sub(srcFg, sourceX, sourceX)
+            bgChars[x] = string.sub(srcBg, sourceX, sourceX)
+        end
+
+        out[y] = {table.concat(textChars), table.concat(fgChars), table.concat(bgChars)}
+    end
+
+    return out
+end
+
+local function fitBlitImagePreserveAspect(image, targetW, targetH, fillFg, fillBg)
+    local srcW, srcH = blitImageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    local scaleX = targetW / srcW
+    local scaleY = targetH / srcH
+    local scale = math.min(scaleX, scaleY)
+    if scale <= 0 then
+        return nil
+    end
+
+    local fitW = math.max(1, math.floor(srcW * scale + 0.5))
+    local fitH = math.max(1, math.floor(srcH * scale + 0.5))
+    local resized = normalizeBlitImageSize(image, fitW, fitH)
+    if not resized then
+        return nil
+    end
+
+    local out = {}
+    local offsetX = math.floor((targetW - fitW) / 2)
+    local offsetY = math.floor((targetH - fitH) / 2)
+
+    local blankText = string.rep(" ", targetW)
+    local blankFg = string.rep(fillFg, targetW)
+    local blankBg = string.rep(fillBg, targetW)
+
+    for y = 1, targetH do
+        out[y] = {blankText, blankFg, blankBg}
+    end
+
+    for y = 1, fitH do
+        local row = resized[y]
+        local text = row[1]
+        local fg = row[2]
+        local bg = row[3]
+
+        local leftText = string.rep(" ", offsetX)
+        local rightText = string.rep(" ", targetW - fitW - offsetX)
+
+        local leftFg = string.rep(fillFg, offsetX)
+        local rightFg = string.rep(fillFg, targetW - fitW - offsetX)
+
+        local leftBg = string.rep(fillBg, offsetX)
+        local rightBg = string.rep(fillBg, targetW - fitW - offsetX)
+
+        out[y + offsetY] = {
+            leftText .. text .. rightText,
+            leftFg .. fg .. rightFg,
+            leftBg .. bg .. rightBg
+        }
+    end
+
+    return out
+end
+
+local function extractLuaCardTables(fileText)
+    local chunk = string.match(fileText, "local%s+image%s*,%s*palette%s*=%s*(.-)%s*term%.clear%s*%(")
+    if not chunk then
+        return nil, nil
+    end
+
+    local loader, err = load("return " .. chunk, "card_asset", "t", {})
+    if not loader then
+        return nil, err
+    end
+
+    local ok, image, palette = pcall(loader)
+    if not ok or type(image) ~= "table" or type(palette) ~= "table" then
+        return nil, "invalid card asset lua data"
+    end
+
+    return image, palette
+end
+
+local function fitBlitPreserveAspect(image, targetW, targetH, fillFg, fillBg)
+    local srcW, srcH = blitImageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    local scaleX = targetW / srcW
+    local scaleY = targetH / srcH
+    local scale = math.min(scaleX, scaleY)
+    if scale <= 0 then
+        return nil
+    end
+
+    local fitW = math.max(1, math.floor(srcW * scale + 0.5))
+    local fitH = math.max(1, math.floor(srcH * scale + 0.5))
+    local resized = normalizeBlitImageSize(image, fitW, fitH)
+    if not resized then
+        return nil
+    end
+
+    local out = {}
+    local offsetX = math.floor((targetW - fitW) / 2)
+    local offsetY = math.floor((targetH - fitH) / 2)
+
+    for y = 1, targetH do
+        out[y] = {string.rep(" ", targetW), string.rep(fillFg, targetW), string.rep(fillBg, targetW)}
+    end
+
+    for y = 1, fitH do
+        local targetY = y + offsetY
+        local srcRow = resized[y]
+        local text, fg, bg = out[targetY][1], out[targetY][2], out[targetY][3]
+        local insertPos = offsetX + 1
+        out[targetY][1] = text:sub(1, insertPos - 1) .. srcRow[1] .. text:sub(insertPos + fitW)
+        out[targetY][2] = fg:sub(1, insertPos - 1) .. srcRow[2] .. fg:sub(insertPos + fitW)
+        out[targetY][3] = bg:sub(1, insertPos - 1) .. srcRow[3] .. bg:sub(insertPos + fitW)
     end
 
     return out
@@ -248,6 +470,7 @@ function Game.new(config)
 
     self.cardsDir = resolveCardsDir()
     self.cardImageCache = {}
+    self.luaCardCache = {}
     self.imageSupportChecked = false
     self.canDrawImages = false
 
@@ -266,6 +489,7 @@ function Game:refreshMonitorGeometry()
 
     -- Rebuild normalized images using the new card dimensions.
     self.cardImageCache = {}
+    self.luaCardCache = {}
 end
 
 function Game:computeLayout()
@@ -320,8 +544,32 @@ function Game:ensureImageSupport()
     end
 
     self.imageSupportChecked = true
-    self.canDrawImages = paintutils and paintutils.loadImage and paintutils.drawImage and self.cardsDir ~= nil
+    self.canDrawImages = self.cardsDir ~= nil
     return self.canDrawImages
+end
+
+function Game:loadLuaCardAsset(path)
+    local content = readAllText(path)
+    if not content then
+        return nil
+    end
+
+    local imageSrc, paletteSrc = content:match("local%s+image%s*,%s*palette%s*=%s*(%b{})%s*,%s*(%b{})")
+    if not imageSrc or not paletteSrc then
+        return nil
+    end
+
+    local chunk, err = load("return " .. imageSrc .. "," .. paletteSrc, "@" .. path, "t", {})
+    if not chunk then
+        return nil, err
+    end
+
+    local ok, image, palette = pcall(chunk)
+    if not ok or type(image) ~= "table" then
+        return nil
+    end
+
+    return image, palette
 end
 
 function Game:cardAssetName(card)
@@ -350,40 +598,119 @@ function Game:cardAssetName(card)
 end
 
 function Game:drawCardImage(x, y, basename)
+    local luaPath = fs.combine(self.cardsDir or "", basename .. ".lua")
+    if self.cardsDir and fs.exists(luaPath) then
+        local cached = self.luaCardCache[luaPath]
+        if cached ~= false then
+            if not cached then
+                local okRead, fileText = pcall(function()
+                    return fs.open(luaPath, "r")
+                end)
+
+                if not okRead or not fileText then
+                    self.luaCardCache[luaPath] = false
+                else
+                    local content = fileText.readAll()
+                    fileText.close()
+
+                    local image, palette = extractLuaCardTables(content)
+                    if not image or not palette then
+                        self.luaCardCache[luaPath] = false
+                    else
+                        local fitted = fitBlitImagePreserveAspect(image, self.cardW, self.cardH, "0", "0")
+                        if not fitted then
+                            self.luaCardCache[luaPath] = false
+                        else
+                            self.luaCardCache[luaPath] = {
+                                image = fitted,
+                                palette = palette
+                            }
+                        end
+                    end
+                end
+
+                cached = self.luaCardCache[luaPath]
+            end
+
+            if cached and cached.image and cached.palette then
+                local previous = term.current()
+                term.redirect(self.monitor)
+
+                for i = 0, 15 do
+                    local pal = cached.palette[i]
+                    if pal and term.setPaletteColor then
+                        term.setPaletteColor(2 ^ i, table.unpack(pal))
+                    end
+                end
+
+                for rowIndex, row in ipairs(cached.image) do
+                    term.setCursorPos(x, y + rowIndex - 1)
+                    term.blit(row[1], row[2], row[3])
+                end
+
+                if term.setPaletteColor and term.nativePaletteColor then
+                    for i = 0, 15 do
+                        term.setPaletteColor(2 ^ i, term.nativePaletteColor(2 ^ i))
+                    end
+                end
+
+                term.redirect(previous)
+                return true
+            end
+        end
+    end
+
     if not self:ensureImageSupport() then
         return false
     end
 
-    local path = fs.combine(self.cardsDir, basename .. ".nfp")
-    if not fs.exists(path) then
-        return false
-    end
+    local nfpPath = fs.combine(self.cardsDir, basename .. ".nfp")
+    if not fs.exists(nfpPath) then return false end
 
-    local image = self.cardImageCache[path]
+    local image = self.cardImageCache[nfpPath]
     if image == false then
         return false
     end
 
     if not image then
-        local ok, loaded = pcall(paintutils.loadImage, path)
+        local ok, loaded = pcall(paintutils.loadImage, nfpPath)
         if not ok or not loaded then
-            self.cardImageCache[path] = false
+            self.cardImageCache[nfpPath] = false
             return false
         end
 
         local normalized = fitImagePreserveAspect(loaded, self.cardW, self.cardH, colors.white)
         if not normalized then
-            self.cardImageCache[path] = false
+            self.cardImageCache[nfpPath] = false
             return false
         end
 
-        image = normalized
-        self.cardImageCache[path] = image
+        image = {kind = "paint", rows = normalized}
+        self.cardImageCache[nfpPath] = image
     end
 
     local previous = term.current()
     term.redirect(self.monitor)
-    local ok = pcall(paintutils.drawImage, image, x, y)
+
+    local ok = true
+    if image.kind == "blit" then
+        if type(image.palette) == "table" then
+            for i = 0, 15 do
+                local entry = image.palette[i]
+                if entry then
+                    self.monitor.setPaletteColor(2 ^ i, entry[1], entry[2], entry[3])
+                end
+            end
+        end
+
+        for rowIndex, row in ipairs(image.rows) do
+            self.monitor.setCursorPos(x, y + rowIndex - 1)
+            self.monitor.blit(row[1], row[2], row[3])
+        end
+    else
+        ok = pcall(paintutils.drawImage, image.rows, x, y)
+    end
+
     term.redirect(previous)
     return ok
 end
