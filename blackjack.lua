@@ -503,7 +503,7 @@ function Game:computeLayout()
     -- Size cards for the common 2-card blackjack state; when a 3rd card appears
     -- we dynamically tighten spacing instead of shrinking the art itself.
     local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
-    local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
+    local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.25)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
     local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
