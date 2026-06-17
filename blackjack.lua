@@ -1,30 +1,27 @@
 ---@diagnostic disable: undefined-global
 
-local function addPath(pattern)
-    if not string.find(package.path, pattern, 1, true) then
-        package.path = package.path .. ";" .. pattern
+local function loadLocalModule(moduleName)
+    local ok, moduleOrErr = pcall(require, moduleName)
+    if ok then return moduleOrErr end
+
+    if not shell or not fs then
+        error(moduleOrErr)
     end
+
+    local running = shell.getRunningProgram and shell.getRunningProgram() or ""
+    local resolved = shell.resolve and shell.resolve(running) or running
+    local scriptDir = fs.getDir(resolved)
+    local modulePath = string.gsub(moduleName, "%%.", "/") .. ".lua"
+    local candidate = fs.combine(scriptDir, modulePath)
+
+    if fs.exists(candidate) then
+        return dofile(candidate)
+    end
+
+    error(moduleOrErr)
 end
 
-local function bootstrapModulePaths()
-    addPath("?.lua")
-    addPath("?/init.lua")
-
-    if not shell or not fs then return end
-
-    local running = shell.getRunningProgram and shell.getRunningProgram() or nil
-    if not running or running == "" then return end
-
-    local rootDir = fs.getDir(running)
-    if rootDir and rootDir ~= "" then
-        addPath(fs.combine(rootDir, "?.lua"))
-        addPath(fs.combine(rootDir, "?/init.lua"))
-    end
-end
-
-bootstrapModulePaths()
-
-local Blackjack = require("games.blackjack")
+local Blackjack = loadLocalModule("games.blackjack")
 
 Blackjack.run({
     baseBet = 5,

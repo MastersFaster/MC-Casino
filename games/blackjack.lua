@@ -1,32 +1,29 @@
 ---@diagnostic disable: undefined-global, undefined-field
 
-local function addPath(pattern)
-    if not string.find(package.path, pattern, 1, true) then
-        package.path = package.path .. ";" .. pattern
+local function loadLocalModule(moduleName)
+    local ok, moduleOrErr = pcall(require, moduleName)
+    if ok then return moduleOrErr end
+
+    if not shell or not fs then
+        error(moduleOrErr)
     end
+
+    local running = shell.getRunningProgram and shell.getRunningProgram() or ""
+    local resolved = shell.resolve and shell.resolve(running) or running
+    local scriptDir = fs.getDir(resolved)
+    local projectDir = fs.getDir(scriptDir)
+    local modulePath = string.gsub(moduleName, "%%.", "/") .. ".lua"
+    local candidate = fs.combine(projectDir, modulePath)
+
+    if fs.exists(candidate) then
+        return dofile(candidate)
+    end
+
+    error(moduleOrErr)
 end
 
-local function bootstrapModulePaths()
-    addPath("?.lua")
-    addPath("?/init.lua")
-
-    if not shell or not fs then return end
-
-    local running = shell.getRunningProgram and shell.getRunningProgram() or nil
-    if not running or running == "" then return end
-
-    local programDir = fs.getDir(running)
-    local rootDir = fs.getDir(programDir)
-    if rootDir and rootDir ~= "" then
-        addPath(fs.combine(rootDir, "?.lua"))
-        addPath(fs.combine(rootDir, "?/init.lua"))
-    end
-end
-
-bootstrapModulePaths()
-
-local Layout = require("casino.layout")
-local Currency = require("casino.currency")
+local Layout = loadLocalModule("casino.layout")
+local Currency = loadLocalModule("casino.currency")
 local pullEvent = os.pullEvent
 
 local BlackjackGame = {}
