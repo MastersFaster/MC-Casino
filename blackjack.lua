@@ -87,6 +87,49 @@ local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 local CARD_W = 9
 local CARD_H = 5
 
+local function imageSize(image)
+    local h = #image
+    local w = 0
+
+    if h > 0 and type(image[1]) == "table" then
+        w = #image[1]
+    end
+
+    return w, h
+end
+
+local function clamp(value, minValue, maxValue)
+    if value < minValue then return minValue end
+    if value > maxValue then return maxValue end
+    return value
+end
+
+local function normalizeImageSize(image, targetW, targetH)
+    local srcW, srcH = imageSize(image)
+    if srcW <= 0 or srcH <= 0 then
+        return nil
+    end
+
+    if srcW == targetW and srcH == targetH then
+        return image
+    end
+
+    local out = {}
+
+    for y = 1, targetH do
+        out[y] = {}
+        local sourceY = clamp(math.floor(((y - 0.5) * srcH / targetH) + 0.5), 1, srcH)
+        local sourceRow = image[sourceY]
+
+        for x = 1, targetW do
+            local sourceX = clamp(math.floor(((x - 0.5) * srcW / targetW) + 0.5), 1, srcW)
+            out[y][x] = sourceRow[sourceX]
+        end
+    end
+
+    return out
+end
+
 local function inBox(x, y, bx, by, bw, bh)
     return x >= bx and x <= bx + bw - 1 and y >= by and y <= by + bh - 1
 end
@@ -245,7 +288,14 @@ function Game:drawCardImage(x, y, basename)
             self.cardImageCache[path] = false
             return false
         end
-        image = loaded
+
+        local normalized = normalizeImageSize(loaded, CARD_W, CARD_H)
+        if not normalized then
+            self.cardImageCache[path] = false
+            return false
+        end
+
+        image = normalized
         self.cardImageCache[path] = image
     end
 
