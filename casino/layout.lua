@@ -177,7 +177,14 @@ function Layout.resolve(config)
     end
 
     local houseName = resolveName(config.houseChest)
+    if houseName and not isInventory(houseName) then
+        houseName = nil
+    end
+
     local playerName = resolveName(config.playerChest)
+    if playerName and not isInventory(playerName) then
+        playerName = nil
+    end
 
     if houseName then used[houseName] = true end
     if playerName then used[playerName] = true end
