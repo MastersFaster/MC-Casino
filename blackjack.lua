@@ -84,8 +84,9 @@ end
 local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
-local CARD_W = 9
-local CARD_H = 5
+local MIN_CARD_W = 9
+local MAX_CARD_W = 12
+local MIN_CARD_H = 5
 
 local function imageSize(image)
     local h = #image
@@ -214,11 +215,26 @@ function Game.new(config)
 end
 
 function Game:computeLayout()
-    self.dealerY = 6
-    self.playerY = 16
-
     local buttonY1 = self.monitorHeight - 11
     local buttonY2 = buttonY1 + 5
+
+    self.cardGap = 2
+    local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 3)
+    self.cardW = clamp(maxCardWByWidth, MIN_CARD_W, MAX_CARD_W)
+
+    local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
+    if maxCardHByHeight < MIN_CARD_H then
+        maxCardHByHeight = MIN_CARD_H
+    end
+
+    local desiredCardH = math.floor(self.cardW * 0.7)
+    self.cardH = clamp(desiredCardH, MIN_CARD_H, maxCardHByHeight)
+
+    self.dealerLabelY = 4
+    self.dealerY = self.dealerLabelY + 2
+    self.playerY = self.dealerY + self.cardH + 6
+    self.playerLabelY = self.playerY - 3
+
     local cashY = buttonY1 - 4
 
     self.hitBox = {x = 3, y = buttonY1, w = 12, h = 3}
@@ -227,7 +243,7 @@ function Game:computeLayout()
     self.quitBox = {x = 21, y = buttonY2, w = 12, h = 3}
     self.cashBox = {x = 12, y = cashY, w = 12, h = 3}
 
-    self.infoTotalY = self.playerY + CARD_H + 1
+    self.infoTotalY = self.playerY + self.cardH + 1
     self.infoMoneyY = self.infoTotalY + 1
     self.infoHouseY = self.infoTotalY + 2
 end
@@ -289,7 +305,7 @@ function Game:drawCardImage(x, y, basename)
             return false
         end
 
-        local normalized = normalizeImageSize(loaded, CARD_W, CARD_H)
+        local normalized = normalizeImageSize(loaded, self.cardW, self.cardH)
         if not normalized then
             self.cardImageCache[path] = false
             return false
@@ -313,34 +329,62 @@ function Game:centerText(y, text)
 end
 
 function Game:cardX(index)
-    return 3 + (index - 1) * (CARD_W + 2)
+    return 3 + (index - 1) * (self.cardW + self.cardGap)
+end
+
+function Game:drawCardLabelOverlay(x, y, card)
+    local label = card.rank .. card.suit
+
+    self.monitor.setBackgroundColor(colors.white)
+    self.monitor.setTextColor(colors.black)
+
+    self.monitor.setCursorPos(x + 1, y + 1)
+    self.monitor.write(label)
+
+    local rightX = x + self.cardW - #label - 1
+    local bottomY = y + self.cardH - 2
+    if rightX >= x + 1 and bottomY >= y + 1 then
+        self.monitor.setCursorPos(rightX, bottomY)
+        self.monitor.write(label)
+    end
+
+    self.monitor.setBackgroundColor(colors.green)
+    self.monitor.setTextColor(colors.white)
 end
 
 function Game:drawCard(x, y, card)
     local cardAsset = self:cardAssetName(card)
     if cardAsset and self:drawCardImage(x, y, cardAsset) then
+        self:drawCardLabelOverlay(x, y, card)
         return
     end
+
+    local innerW = self.cardW - 2
+    local innerH = self.cardH - 2
 
     self.monitor.setBackgroundColor(colors.white)
     self.monitor.setTextColor(colors.black)
 
     self.monitor.setCursorPos(x, y)
-    self.monitor.write("+-------+")
-    self.monitor.setCursorPos(x, y + 1)
-    self.monitor.write("|       |")
+    self.monitor.write("+" .. string.rep("-", innerW) .. "+")
+
+    for row = 1, innerH do
+        self.monitor.setCursorPos(x, y + row)
+        self.monitor.write("|" .. string.rep(" ", innerW) .. "|")
+    end
 
     local label = card.rank .. card.suit
-    local pad = 7 - #label
+    local pad = innerW - #label
+    if pad < 0 then pad = 0 end
     local left = math.floor(pad / 2)
     local right = pad - left
 
-    self.monitor.setCursorPos(x, y + 2)
+    local labelY = y + math.floor(self.cardH / 2)
+    self.monitor.setCursorPos(x, labelY)
     self.monitor.write("|" .. string.rep(" ", left) .. label .. string.rep(" ", right) .. "|")
-    self.monitor.setCursorPos(x, y + 3)
-    self.monitor.write("|       |")
-    self.monitor.setCursorPos(x, y + 4)
-    self.monitor.write("+-------+")
+
+    self.monitor.setCursorPos(x, y + self.cardH - 1)
+    self.monitor.write("+" .. string.rep("-", innerW) .. "+")
 
     self.monitor.setBackgroundColor(colors.green)
     self.monitor.setTextColor(colors.white)
@@ -351,19 +395,28 @@ function Game:drawHiddenCard(x, y)
         return
     end
 
+    local innerW = self.cardW - 2
+    local innerH = self.cardH - 2
+
     self.monitor.setBackgroundColor(colors.white)
     self.monitor.setTextColor(colors.black)
 
     self.monitor.setCursorPos(x, y)
-    self.monitor.write("+-------+")
-    self.monitor.setCursorPos(x, y + 1)
-    self.monitor.write("|#######|")
-    self.monitor.setCursorPos(x, y + 2)
-    self.monitor.write("|#  ?  #|")
-    self.monitor.setCursorPos(x, y + 3)
-    self.monitor.write("|#######|")
-    self.monitor.setCursorPos(x, y + 4)
-    self.monitor.write("+-------+")
+    self.monitor.write("+" .. string.rep("-", innerW) .. "+")
+
+    for row = 1, innerH do
+        self.monitor.setCursorPos(x, y + row)
+        if row == math.floor((innerH + 1) / 2) then
+            local leftHashes = math.floor((innerW - 1) / 2)
+            local rightHashes = innerW - leftHashes - 1
+            self.monitor.write("|" .. string.rep("#", leftHashes) .. "?" .. string.rep("#", rightHashes) .. "|")
+        else
+            self.monitor.write("|" .. string.rep("#", innerW) .. "|")
+        end
+    end
+
+    self.monitor.setCursorPos(x, y + self.cardH - 1)
+    self.monitor.write("+" .. string.rep("-", innerW) .. "+")
 
     self.monitor.setBackgroundColor(colors.green)
     self.monitor.setTextColor(colors.white)
@@ -394,7 +447,7 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
 
     self:centerText(2, "BLACKJACK CASINO")
 
-    self.monitor.setCursorPos(3, 4)
+    self.monitor.setCursorPos(3, self.dealerLabelY)
     self.monitor.write("Dealer:")
     for i, card in ipairs(dealerHand) do
         if i > 3 then break end
@@ -406,7 +459,7 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
         end
     end
 
-    self.monitor.setCursorPos(3, 13)
+    self.monitor.setCursorPos(3, self.playerLabelY)
     self.monitor.write("Player:")
     for i, card in ipairs(playerHand) do
         if i > 3 then break end
