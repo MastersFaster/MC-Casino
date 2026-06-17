@@ -224,7 +224,7 @@ end
 
 function Layout.prepareMonitor(mon, options)
     options = options or {}
-    options.scale = 0.5
+    options.scale = 0.25
 
     mon.setBackgroundColor(options.background or colors.green)
     mon.setTextColor(options.text or colors.white)
