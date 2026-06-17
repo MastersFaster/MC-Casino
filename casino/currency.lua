@@ -50,6 +50,10 @@ local function appendError(errors, label, err)
     table.insert(errors, label .. ": " .. tostring(err))
 end
 
+local function isSideName(name)
+    return name == "left" or name == "right" or name == "top" or name == "bottom" or name == "front" or name == "back"
+end
+
 local function tryTransfer(fromInv, toInv, fromName, toName, slot, amount)
     local errors = {}
 
@@ -86,6 +90,18 @@ function Currency:validateTransferRoutes()
 
     if not fromName or not toName then
         error("Currency validation failed: unable to resolve player/house inventory names")
+    end
+
+    -- Mixed naming domains (local side + modem remote name) often fail push/pull routing.
+    local fromIsSide = isSideName(fromName)
+    local toIsSide = isSideName(toName)
+    if fromIsSide ~= toIsSide then
+        error(
+            "Currency transfer domain mismatch: player inventory is '" .. fromName ..
+            "' and house inventory is '" .. toName .. "'. " ..
+            "Use both chests in the same domain: either both directly adjacent side names or both modem remote names. " ..
+            "Recommended fix: put wired modems on BOTH chests and configure playerChest/houseChest to their modem names."
+        )
     end
 
     local _, forwardErr = tryTransfer(self.playerInventory, self.houseInventory, fromName, toName, 1, 0)

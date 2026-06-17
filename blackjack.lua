@@ -386,8 +386,8 @@ local game = Game.new({
         -- House Chest | Player Chest
         monitor = "top",
         hopper = "right",
-        houseChest = "back",
-        playerChest = "bottom",
+        houseChest = "sophisticatedstorage:chest_1",
+        playerChest = "sophisticatedstorage:chest_0",
         requireHopper = true
     }
 })
