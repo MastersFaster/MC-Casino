@@ -444,6 +444,9 @@ function Game.new(config)
 
     local self = setmetatable({}, Game)
     self.baseBet = config.baseBet or 5
+    self.cardScale = tonumber(config.cardScale) or 1.0
+    if self.cardScale < 0.5 then self.cardScale = 0.5 end
+    if self.cardScale > 2.0 then self.cardScale = 2.0 end
 
     self.layout = Layout.resolve(config.layout)
     self.monitor = self.layout.monitor
@@ -500,7 +503,8 @@ function Game:computeLayout()
     -- Size cards for the common 2-card blackjack state; when a 3rd card appears
     -- we dynamically tighten spacing instead of shrinking the art itself.
     local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
-    self.cardW = clamp(maxCardWByWidth, MIN_CARD_W, MAX_CARD_W)
+    local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
+    self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
     local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
     if maxCardHByHeight < MIN_CARD_H then
@@ -1108,6 +1112,7 @@ local game = Game.new({
     baseBet = 5,
     currencyItem = "minecraft:iron_ingot",
     monitorScale = 0.5,
+    cardScale = 1.0,
     layout = {
         -- Standard casino machine format:
         -- 2x3 Monitor
