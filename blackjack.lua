@@ -31,6 +31,37 @@ end
 local Layout = loadLocalModule("casino.layout")
 local Currency = loadLocalModule("casino.currency")
 local pullEvent = os.pullEvent
+local LOCAL_SIDES = {left = true, right = true, top = true, bottom = true, front = true, back = true}
+
+local function isLocalSideName(name)
+    return type(name) == "string" and LOCAL_SIDES[name] == true
+end
+
+local function peripheralTypeMatches(name, needle)
+    local pType = peripheral.getType(name)
+    if not pType then
+        return false
+    end
+
+    return string.find(string.lower(pType), string.lower(needle), 1, true) ~= nil
+end
+
+local function findPeripheralByType(needle)
+    if not peripheral or not peripheral.getNames then
+        return nil
+    end
+
+    local names = peripheral.getNames()
+    table.sort(names)
+
+    for _, name in ipairs(names) do
+        if peripheralTypeMatches(name, needle) then
+            return name
+        end
+    end
+
+    return nil
+end
 
 local function printPeripheralBootInfo()
     if not peripheral then return end
@@ -456,6 +487,22 @@ function Game.new(config)
     self.playerLabelText = config.playerLabelText or "Player"
     self.cardsLabelText = config.cardsLabelText or "Cards"
     self.currentBet = config.baseBet or 5
+
+    local configuredDropper = config.dropperName or (config.layout and config.layout.dropper)
+    if configuredDropper and peripheral.isPresent(configuredDropper) then
+        self.dropperName = configuredDropper
+    elseif configuredDropper and string.find(string.lower(configuredDropper), "dropper", 1, true) then
+        self.dropperName = findPeripheralByType("dropper")
+    else
+        self.dropperName = findPeripheralByType("dropper")
+    end
+
+    self.dropper = self.dropperName and peripheral.wrap(self.dropperName) or nil
+    self.dropperPulseSide = config.dropperPulseSide
+
+    if not self.dropperPulseSide and isLocalSideName(self.dropperName) then
+        self.dropperPulseSide = self.dropperName
+    end
 
     Layout.prepareMonitor(self.monitor, {
         scale = self.monitorScale,
@@ -994,10 +1041,27 @@ function Game:collectBetBeforeDeal(initialBet)
 
         self:drawTable({}, {}, false, money, bet, houseMoney, "betting", "Set bet and tap Play")
 
-        local x, y = self:waitTouch()
+        local lastMoney = money
+        local lastHouseMoney = houseMoney
+
+        local x, y = self:waitTouchWithTick(function()
+            self:syncHopperDeposits()
+
+            local liveMoney = self.currency:getPlayerMoney()
+            local liveHouseMoney = self.currency:getHouseMoney()
+            local liveMaxBet = math.max(1, math.min(liveMoney, liveHouseMoney))
+            local newBet = clamp(bet, 1, liveMaxBet)
+
+            if liveMoney ~= lastMoney or liveHouseMoney ~= lastHouseMoney or newBet ~= bet then
+                bet = newBet
+                lastMoney = liveMoney
+                lastHouseMoney = liveHouseMoney
+                self:drawTable({}, {}, false, liveMoney, bet, liveHouseMoney, "betting", "Set bet and tap Play")
+            end
+        end)
 
         if inBox(x, y, self.cashBox.x, self.cashBox.y, self.cashBox.w, self.cashBox.h) then
-            self:showMessage("Cashout: take iron from player chest.", 3)
+            self:runCashoutSequence()
             return nil, "cashout"
         elseif inBox(x, y, self.betMinusBox.x, self.betMinusBox.y, self.betMinusBox.w, self.betMinusBox.h) then
             bet = math.max(1, bet - 1)
@@ -1030,10 +1094,27 @@ function Game:showMessage(text, seconds)
 end
 
 function Game:waitTouch()
+    return self:waitTouchWithTick(function()
+        self:syncHopperDeposits()
+    end)
+end
+
+function Game:waitTouchWithTick(onTick)
+    local timerId = os.startTimer(0.2)
+
     while true do
-        local _, side, x, y = pullEvent("monitor_touch")
-        if side == self.monitorName then
-            return x, y
+        local event, p1, p2, p3 = pullEvent()
+
+        if event == "monitor_touch" then
+            local side, x, y = p1, p2, p3
+            if side == self.monitorName then
+                return x, y
+            end
+        elseif event == "timer" and p1 == timerId then
+            if onTick then
+                onTick()
+            end
+            timerId = os.startTimer(0.2)
         end
     end
 end
@@ -1076,6 +1157,68 @@ function Game:syncHopperDeposits()
     return movedTotal
 end
 
+function Game:dropperItemCount()
+    if not self.dropper then
+        return 0
+    end
+
+    local ok, items = pcall(function()
+        return self.dropper.list()
+    end)
+    if not ok or type(items) ~= "table" then
+        return 0
+    end
+
+    local total = 0
+    for _, item in pairs(items) do
+        total = total + (item.count or 0)
+    end
+
+    return total
+end
+
+function Game:pulseDropperByItemCount(itemCount)
+    if itemCount <= 0 then
+        return 0, "empty"
+    end
+
+    if not redstone then
+        return 0, "no_redstone"
+    end
+
+    if not self.dropperPulseSide or not isLocalSideName(self.dropperPulseSide) then
+        return 0, "no_pulse_side"
+    end
+
+    local pulses = 0
+    for _ = 1, itemCount do
+        redstone.setOutput(self.dropperPulseSide, true)
+        sleep(0.08)
+        redstone.setOutput(self.dropperPulseSide, false)
+        sleep(0.08)
+        pulses = pulses + 1
+    end
+
+    return pulses, nil
+end
+
+function Game:runCashoutSequence()
+    local dropperItems = self:dropperItemCount()
+    local pulses, reason = self:pulseDropperByItemCount(dropperItems)
+
+    if dropperItems > 0 and pulses > 0 then
+        self:showMessage("Cashout dropper pulsed " .. pulses .. "x.", 2)
+    elseif dropperItems > 0 and reason == "no_pulse_side" then
+        self:showMessage("Set dropperPulseSide to pulse cashout.", 2)
+    elseif dropperItems > 0 and reason == "no_redstone" then
+        self:showMessage("Redstone API unavailable for pulse.", 2)
+    else
+        self:showMessage("Cashout dropper is empty.", 2)
+    end
+
+    self:showMessage("Cashout: take iron, then insert to play.", 3)
+end
+
 function Game:playRound()
     self:syncHopperDeposits()
 
@@ -1089,13 +1232,7 @@ function Game:playRound()
 
     if houseMoney <= 0 then
         self:showOutOfService("House chest empty. Cashing out.")
-        self:showMessage("Cashout: take iron from player chest.", 3)
-        return false
-    end
-
-    if houseMoney <= 0 then
-        self:showOutOfService("House chest empty. Cashing out.")
-        self:showMessage("Cashout: take iron from player chest.", 3)
+        self:runCashoutSequence()
         return false
     end
 
@@ -1171,12 +1308,12 @@ function Game:playRound()
                 result = "You win!"
                 if not self.currency:houseCanCover(bet) then
                     self:showOutOfService("House cannot pay winnings.")
-                    self:showMessage("Cashout: take iron from player chest.", 3)
+                    self:runCashoutSequence()
                     return false
                 end
                 if not self.currency:settleWin(bet) then
                     self:showOutOfService("Payout transfer failed.")
-                    self:showMessage("Cashout: take iron from player chest.", 3)
+                    self:runCashoutSequence()
                     return false
                 end
             elseif playerTotal < dealerTotal then
@@ -1223,6 +1360,10 @@ local game = Game.new({
     currencyItem = "minecraft:iron_ingot",
     monitorScale = 1,
     cardScale = 2,
+    -- Set dropperName to your cashout dropper peripheral name.
+    -- Set dropperPulseSide to the local redstone side that powers that dropper.
+    dropperName = "minecraft:dropper",
+    dropperPulseSide = "left",
     layout = {
         -- Standard casino machine format:
         -- 2x3 Monitor
@@ -1230,6 +1371,7 @@ local game = Game.new({
         -- House Chest | Player Chest
         monitor = "top",
         hopper = "right",
+        dropper = "minecraft:dropper",
         houseChest = "sophisticatedstorage:limited_barrel_x",
         playerChest = "sophisticatedstorage:chest_x",
         requireHopper = true
