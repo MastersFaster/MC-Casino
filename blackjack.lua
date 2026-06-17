@@ -500,6 +500,16 @@ function Game.new(config)
     self.dropper = self.dropperName and peripheral.wrap(self.dropperName) or nil
     self.dropperPulseSide = config.dropperPulseSide
 
+    local configuredRelay = config.redstoneRelayName or (config.layout and config.layout.redstoneRelay)
+    if configuredRelay and peripheral.isPresent(configuredRelay) then
+        self.redstoneRelayName = configuredRelay
+    elseif configuredRelay and string.find(string.lower(configuredRelay), "redstone_relay", 1, true) then
+        self.redstoneRelayName = findPeripheralByType("redstone_relay")
+    else
+        self.redstoneRelayName = findPeripheralByType("redstone_relay")
+    end
+    self.redstoneRelay = self.redstoneRelayName and peripheral.wrap(self.redstoneRelayName) or nil
+
     if not self.dropperPulseSide and isLocalSideName(self.dropperName) then
         self.dropperPulseSide = self.dropperName
     end
@@ -1218,11 +1228,47 @@ function Game:pulseDropperByItemCount(itemCount)
     if itemCount <= 0 then
         return 0, "empty"
     end
-    if not self.dropper then
-        return 0, "no_dropper"
+
+    if not self.redstoneRelay then
+        return 0, "no_relay"
     end
-    self.dropper.drop(itemCount)
-    return itemCount, nil
+
+    if not self.dropperPulseSide or self.dropperPulseSide == "" then
+        return 0, "no_pulse_side"
+    end
+
+    local function setRelayOutput(state)
+        if type(self.redstoneRelay.setOutput) == "function" then
+            local ok = pcall(function()
+                self.redstoneRelay.setOutput(self.dropperPulseSide, state)
+            end)
+            return ok
+        end
+
+        if self.redstoneRelayName then
+            local ok = pcall(function()
+                peripheral.call(self.redstoneRelayName, "setOutput", self.dropperPulseSide, state)
+            end)
+            return ok
+        end
+
+        return false
+    end
+
+    local pulses = 0
+    for _ = 1, itemCount do
+        if not setRelayOutput(true) then
+            return pulses, "relay_set_output_failed"
+        end
+        sleep(0.08)
+        if not setRelayOutput(false) then
+            return pulses, "relay_set_output_failed"
+        end
+        sleep(0.08)
+        pulses = pulses + 1
+    end
+
+    return pulses, nil
 end
 
 function Game:runCashoutSequence()
@@ -1244,8 +1290,10 @@ function Game:runCashoutSequence()
         self:showMessage("Cashout dropper pulsed " .. pulses .. "x.", 2)
     elseif dropperItems > 0 and reason == "no_pulse_side" then
         self:showMessage("Set dropperPulseSide to pulse cashout.", 2)
-    elseif dropperItems > 0 and reason == "no_redstone" then
-        self:showMessage("Redstone API unavailable for pulse.", 2)
+    elseif dropperItems > 0 and reason == "no_relay" then
+        self:showMessage("Redstone relay not found.", 2)
+    elseif dropperItems > 0 and reason == "relay_set_output_failed" then
+        self:showMessage("Relay output call failed.", 2)
     else
         self:showMessage("Cashout dropper is empty.", 2)
     end
@@ -1395,8 +1443,10 @@ local game = Game.new({
     monitorScale = 1,
     cardScale = 2,
     -- Set dropperName to your cashout dropper peripheral name.
-    -- Set dropperPulseSide to the local redstone side that powers that dropper.
+    -- Set redstoneRelayName to your relay peripheral and dropperPulseSide
+    -- to the relay output side that is wired to the dropper.
     dropperName = "minecraft:dropper_0",
+    redstoneRelayName = "redstone_relay_0",
     dropperPulseSide = "left",
     layout = {
         -- Standard casino machine format:
@@ -1406,6 +1456,7 @@ local game = Game.new({
         monitor = "top",
         hopper = "right",
         dropper = "minecraft:dropper_0",
+        redstoneRelay = "redstone_relay_0",
         houseChest = "sophisticatedstorage:limited_barrel_x",
         playerChest = "sophisticatedstorage:chest_x",
         requireHopper = true
