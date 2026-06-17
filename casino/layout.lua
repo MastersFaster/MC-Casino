@@ -97,6 +97,24 @@ local function resolveName(ref)
         end
     end
 
+    -- Allow placeholder refs like "sophisticatedstorage:chest_x" where x is numeric.
+    if type(ref) == "string" and string.find(ref, "_x", 1, true) then
+        local escaped = string.gsub(ref, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+        local pattern = "^" .. string.gsub(escaped, "_x", "_%%d+") .. "$"
+
+        local matches = {}
+        for _, name in ipairs(allPeripheralNames()) do
+            if string.match(name, pattern) then
+                table.insert(matches, name)
+            end
+        end
+
+        if #matches > 0 then
+            table.sort(matches)
+            return matches[1]
+        end
+    end
+
     return nil
 end
 
