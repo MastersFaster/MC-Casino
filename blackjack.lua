@@ -1221,8 +1221,8 @@ function Game:pulseDropperByItemCount(itemCount)
     if not self.dropper then
         return 0, "no_dropper"
     end
-    self.dropper.pushItems(self.dropperName, 1, itemCount)
-    return itemCount, nil
+    self.dropper.dropUp(1)
+    return 1, nil
 end
 
 function Game:runCashoutSequence()
