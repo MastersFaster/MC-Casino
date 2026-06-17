@@ -85,7 +85,7 @@ local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
 local MIN_CARD_W = 9
-local MAX_CARD_W = 12
+local MAX_CARD_W = 18
 local MIN_CARD_H = 5
 
 local function imageSize(image)
@@ -254,6 +254,20 @@ function Game.new(config)
     return self
 end
 
+function Game:refreshMonitorGeometry()
+    local width, height = self.monitor.getSize()
+    if width == self.monitorWidth and height == self.monitorHeight then
+        return
+    end
+
+    self.monitorWidth = width
+    self.monitorHeight = height
+    self:computeLayout()
+
+    -- Rebuild normalized images using the new card dimensions.
+    self.cardImageCache = {}
+end
+
 function Game:computeLayout()
     local buttonY1 = self.monitorHeight - 11
     local buttonY2 = buttonY1 + 5
@@ -267,7 +281,8 @@ function Game:computeLayout()
         maxCardHByHeight = MIN_CARD_H
     end
 
-    local desiredCardH = math.floor(self.cardW * 0.7)
+    -- Card art is portrait-oriented, so keep cards taller than they are wide.
+    local desiredCardH = math.floor(self.cardW * 1.4)
     self.cardH = clamp(desiredCardH, MIN_CARD_H, maxCardHByHeight)
 
     self.dealerLabelY = 4
@@ -478,6 +493,8 @@ function Game:drawButton(x, y, w, label)
 end
 
 function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money, bet, houseMoney)
+    self:refreshMonitorGeometry()
+
     self.monitor.clear()
 
     self:centerText(2, "BLACKJACK CASINO")
