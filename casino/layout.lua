@@ -149,7 +149,11 @@ function Layout.resolve(config)
 
     local used = {}
 
-    local monitorName = resolveName(config.monitor) or findByType("monitor")
+    local monitorName = resolveName(config.monitor)
+    if monitorName and not hasType(monitorName, "monitor") then
+        monitorName = nil
+    end
+    monitorName = monitorName or findByType("monitor")
     if not monitorName then
         error("No monitor found. Peripherals seen: " .. peripheralSummary())
     end

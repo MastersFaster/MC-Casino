@@ -360,8 +360,8 @@ local game = Game.new({
         -- 2x3 Monitor
         -- Advanced Computer | Hopper
         -- House Chest | Player Chest
-        monitor = "right",
-        hopper = "left",
+        monitor = "top",
+        hopper = "right",
         houseChest = "back",
         playerChest = "bottom",
         requireHopper = true
