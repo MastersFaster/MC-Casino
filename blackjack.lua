@@ -94,7 +94,7 @@ local HIT_BOX = {x = 3, y = BUTTON_Y1, w = 12, h = 3}
 local STAND_BOX = {x = 21, y = BUTTON_Y1, w = 12, h = 3}
 local DOUBLE_BOX = {x = 3, y = BUTTON_Y2, w = 12, h = 3}
 local QUIT_BOX = {x = 21, y = BUTTON_Y2, w = 12, h = 3}
-local CASH_BOX = {x = 12, y = 24, w = 12, h = 3}
+local CASH_BOX = {x = 12, y = 38, w = 12, h = 3}
 
 local function inBox(x, y, bx, by, bw, bh)
     return x >= bx and x <= bx + bw - 1 and y >= by and y <= by + bh - 1
@@ -352,13 +352,13 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
         self:drawCard(self:cardX(i), PLAYER_Y, card)
     end
 
-    self.monitor.setCursorPos(3, 23)
+    self.monitor.setCursorPos(3, 22)
     self.monitor.write("Total: " .. playerTotal)
 
-    self.monitor.setCursorPos(3, 25)
+    self.monitor.setCursorPos(3, 23)
     self.monitor.write("Iron: " .. money .. "  Bet: " .. bet)
 
-    self.monitor.setCursorPos(3, 26)
+    self.monitor.setCursorPos(3, 24)
     self.monitor.write("House: " .. houseMoney)
 
     self:drawButton(CASH_BOX.x, CASH_BOX.y, CASH_BOX.w, "Cashout")
@@ -405,7 +405,47 @@ function Game:waitTouch()
     end
 end
 
+function Game:syncHopperDeposits()
+    local hopper = self.layout.hopper
+    local hopperName = self.layout.hopperName
+    local playerChestName = self.layout.playerChestName
+
+    if not hopper or not hopperName or not playerChestName then
+        return 0
+    end
+
+    local movedTotal = 0
+    local itemName = self.currency.itemName
+
+    for slot, item in pairs(hopper.list()) do
+        if item.name == itemName then
+            local requested = item.count
+            local moved = 0
+
+            local okPush, movedPush = pcall(function()
+                return hopper.pushItems(playerChestName, slot, requested)
+            end)
+            if okPush and movedPush then
+                moved = movedPush
+            else
+                local okPull, movedPull = pcall(function()
+                    return peripheral.call(playerChestName, "pullItems", hopperName, slot, requested)
+                end)
+                if okPull and movedPull then
+                    moved = movedPull
+                end
+            end
+
+            movedTotal = movedTotal + moved
+        end
+    end
+
+    return movedTotal
+end
+
 function Game:playRound()
+    self:syncHopperDeposits()
+
     local money = self.currency:getPlayerMoney()
     local houseMoney = self.currency:getHouseMoney()
 
@@ -439,6 +479,8 @@ function Game:playRound()
     local canDouble = true
 
     while true do
+        self:syncHopperDeposits()
+
         local playerTotal = handValue(player)
         money = self.currency:getPlayerMoney()
         houseMoney = self.currency:getHouseMoney()
