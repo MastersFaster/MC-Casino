@@ -1177,6 +1177,43 @@ function Game:dropperItemCount()
     return total
 end
 
+function Game:movePlayerIronToDropper()
+    if not self.dropper or not self.dropperName then
+        return 0, "no_dropper"
+    end
+
+    local before = self.currency:getPlayerMoney()
+    if before <= 0 then
+        return 0, nil
+    end
+
+    local ok, movedAllOrErr = pcall(function()
+        return self.currency:move(
+            self.layout.playerChest,
+            self.dropper,
+            before,
+            self.layout.playerChestName,
+            self.dropperName
+        )
+    end)
+
+    if not ok then
+        return 0, tostring(movedAllOrErr)
+    end
+
+    local after = self.currency:getPlayerMoney()
+    local moved = math.max(0, before - after)
+
+    if moved <= 0 and before > 0 then
+        if movedAllOrErr then
+            return 0, "unknown_transfer_failure"
+        end
+        return 0, "partial_or_blocked"
+    end
+
+    return moved, nil
+end
+
 function Game:pulseDropperByItemCount(itemCount)
     if itemCount <= 0 then
         return 0, "empty"
@@ -1203,8 +1240,19 @@ function Game:pulseDropperByItemCount(itemCount)
 end
 
 function Game:runCashoutSequence()
+    self:syncHopperDeposits()
+
+    local movedToDropper, moveErr = self:movePlayerIronToDropper()
     local dropperItems = self:dropperItemCount()
     local pulses, reason = self:pulseDropperByItemCount(dropperItems)
+
+    if movedToDropper > 0 then
+        self:showMessage("Moved " .. movedToDropper .. " iron to dropper.", 2)
+    elseif moveErr == "no_dropper" then
+        self:showMessage("Cashout dropper not found.", 2)
+    elseif moveErr then
+        self:showMessage("Dropper transfer failed.", 2)
+    end
 
     if dropperItems > 0 and pulses > 0 then
         self:showMessage("Cashout dropper pulsed " .. pulses .. "x.", 2)
@@ -1362,7 +1410,7 @@ local game = Game.new({
     cardScale = 2,
     -- Set dropperName to your cashout dropper peripheral name.
     -- Set dropperPulseSide to the local redstone side that powers that dropper.
-    dropperName = "minecraft:dropper",
+    dropperName = "minecraft:dropper_0",
     dropperPulseSide = "left",
     layout = {
         -- Standard casino machine format:
@@ -1371,7 +1419,7 @@ local game = Game.new({
         -- House Chest | Player Chest
         monitor = "top",
         hopper = "right",
-        dropper = "minecraft:dropper",
+        dropper = "minecraft:dropper_0",
         houseChest = "sophisticatedstorage:limited_barrel_x",
         playerChest = "sophisticatedstorage:chest_x",
         requireHopper = true
