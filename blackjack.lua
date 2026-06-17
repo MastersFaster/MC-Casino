@@ -444,7 +444,7 @@ function Game.new(config)
 
     local self = setmetatable({}, Game)
     self.baseBet = config.baseBet or 5
-    self.cardScale = tonumber(config.cardScale) or 0.5
+    self.cardScale = tonumber(config.cardScale) or 1
     if self.cardScale < 0.5 then self.cardScale = 0.5 end
     if self.cardScale > 2.0 then self.cardScale = 2.0 end
 
