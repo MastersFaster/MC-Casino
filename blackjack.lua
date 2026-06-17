@@ -530,7 +530,7 @@ function Game:computeLayout()
     local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
-    local desiredCardH = math.floor(self.cardW * 1.4)
+    local desiredCardH = math.floor(self.cardW * 1)
     self.cardH = math.max(MIN_CARD_H, desiredCardH)
 
     while true do
