@@ -1,5 +1,30 @@
 ---@diagnostic disable: undefined-global, undefined-field
 
+local function addPath(pattern)
+    if not string.find(package.path, pattern, 1, true) then
+        package.path = package.path .. ";" .. pattern
+    end
+end
+
+local function bootstrapModulePaths()
+    addPath("?.lua")
+    addPath("?/init.lua")
+
+    if not shell or not fs then return end
+
+    local running = shell.getRunningProgram and shell.getRunningProgram() or nil
+    if not running or running == "" then return end
+
+    local programDir = fs.getDir(running)
+    local rootDir = fs.getDir(programDir)
+    if rootDir and rootDir ~= "" then
+        addPath(fs.combine(rootDir, "?.lua"))
+        addPath(fs.combine(rootDir, "?/init.lua"))
+    end
+end
+
+bootstrapModulePaths()
+
 local Layout = require("casino.layout")
 local Currency = require("casino.currency")
 local pullEvent = os.pullEvent
