@@ -1,25 +1,58 @@
 ---@diagnostic disable: undefined-global
 
 local Layout = {}
+local LOCAL_SIDES = {"left", "right", "top", "bottom", "front", "back"}
 
-local function resolveName(ref)
-    if not ref then return nil end
-    if peripheral.isPresent(ref) then return ref end
+local function dedupeNames(names)
+    local out = {}
+    local seen = {}
 
-    for _, name in ipairs(peripheral.getNames()) do
-        if name == ref then return name end
-    end
-
-    return nil
-end
-
-local function findByType(typeName)
-    for _, name in ipairs(peripheral.getNames()) do
-        if peripheral.getType(name) == typeName then
-            return name
+    for _, name in ipairs(names) do
+        if name and name ~= "" and not seen[name] then
+            seen[name] = true
+            table.insert(out, name)
         end
     end
-    return nil
+
+    return out
+end
+
+local function allPeripheralNames()
+    local names = {}
+
+    for _, side in ipairs(LOCAL_SIDES) do
+        if peripheral.isPresent(side) then
+            table.insert(names, side)
+        end
+    end
+
+    for _, name in ipairs(peripheral.getNames()) do
+        table.insert(names, name)
+    end
+
+    return dedupeNames(names)
+end
+
+local function hasType(name, match)
+    local lowerMatch = string.lower(match)
+
+    local pType = peripheral.getType(name)
+    if pType and string.find(string.lower(pType), lowerMatch, 1, true) then
+        return true
+    end
+
+    if peripheral.getTypes then
+        local ok, types = pcall(peripheral.getTypes, name)
+        if ok and types then
+            for _, t in ipairs(types) do
+                if t and string.find(string.lower(t), lowerMatch, 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 local function isInventory(name)
@@ -28,20 +61,58 @@ local function isInventory(name)
     return ok
 end
 
-local function findHopperName(exclude)
-    for _, name in ipairs(peripheral.getNames()) do
-        if not exclude[name] then
-            local pType = peripheral.getType(name)
-            if pType and string.find(string.lower(pType), "hopper", 1, true) then
-                return name
-            end
+local function inventorySize(name)
+    local ok, size = pcall(function() return peripheral.call(name, "size") end)
+    if ok then return size end
+    return nil
+end
 
-            if isInventory(name) then
-                local ok, size = pcall(function() return peripheral.call(name, "size") end)
-                if ok and size == 5 then
-                    return name
-                end
-            end
+local function looksLikeHopper(name)
+    if hasType(name, "hopper") then
+        return true
+    end
+
+    if string.find(string.lower(name), "hopper", 1, true) then
+        return true
+    end
+
+    local size = inventorySize(name)
+    if size == 5 then
+        return true
+    end
+
+    return false
+end
+
+local function resolveName(ref)
+    if not ref then return nil end
+
+    if peripheral.isPresent(ref) then
+        return ref
+    end
+
+    for _, name in ipairs(allPeripheralNames()) do
+        if name == ref then
+            return name
+        end
+    end
+
+    return nil
+end
+
+local function findByType(typeName)
+    for _, name in ipairs(allPeripheralNames()) do
+        if hasType(name, typeName) then
+            return name
+        end
+    end
+    return nil
+end
+
+local function findHopperName(exclude)
+    for _, name in ipairs(allPeripheralNames()) do
+        if not exclude[name] and looksLikeHopper(name) then
+            return name
         end
     end
 
@@ -51,14 +122,26 @@ end
 local function collectChestCandidates(exclude)
     local result = {}
 
-    for _, name in ipairs(peripheral.getNames()) do
-        if not exclude[name] and isInventory(name) then
+    for _, name in ipairs(allPeripheralNames()) do
+        if not exclude[name] and isInventory(name) and not looksLikeHopper(name) then
             table.insert(result, name)
         end
     end
 
     table.sort(result)
     return result
+end
+
+local function peripheralSummary()
+    local out = {}
+
+    for _, name in ipairs(allPeripheralNames()) do
+        local pType = peripheral.getType(name) or "unknown"
+        table.insert(out, name .. "(" .. pType .. ")")
+    end
+
+    table.sort(out)
+    return table.concat(out, ", ")
 end
 
 function Layout.resolve(config)
@@ -68,14 +151,23 @@ function Layout.resolve(config)
 
     local monitorName = resolveName(config.monitor) or findByType("monitor")
     if not monitorName then
-        error("No monitor found. Connect a 2x3 monitor to this computer or modem network.")
+        error("No monitor found. Peripherals seen: " .. peripheralSummary())
     end
     used[monitorName] = true
 
-    local hopperName = resolveName(config.hopper) or findHopperName(used)
-    if config.requireHopper ~= false and not hopperName then
-        error("No hopper found. Expected hopper in the casino layout (Computer | Hopper).")
+    local hopperName = resolveName(config.hopper)
+    if hopperName and not looksLikeHopper(hopperName) then
+        hopperName = nil
     end
+
+    if not hopperName then
+        hopperName = findHopperName(used)
+    end
+
+    if config.requireHopper ~= false and not hopperName then
+        error("No hopper found. Peripherals seen: " .. peripheralSummary())
+    end
+
     if hopperName then
         used[hopperName] = true
     end
@@ -104,7 +196,7 @@ function Layout.resolve(config)
     end
 
     if not houseName or not playerName then
-        error("Two chests are required: house chest and player chest.")
+        error("Two chests are required: house chest and player chest. Peripherals seen: " .. peripheralSummary())
     end
 
     return {
