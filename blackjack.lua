@@ -497,7 +497,9 @@ function Game:computeLayout()
     local buttonY2 = buttonY1 + 5
 
     self.cardGap = 2
-    local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 3)
+    -- Size cards for the common 2-card blackjack state; when a 3rd card appears
+    -- we dynamically tighten spacing instead of shrinking the art itself.
+    local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
     self.cardW = clamp(maxCardWByWidth, MIN_CARD_W, MAX_CARD_W)
 
     local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
@@ -536,6 +538,23 @@ function Game:computeLayout()
     self.infoTotalY = self.playerY + self.cardH + 1
     self.infoMoneyY = self.infoTotalY + 1
     self.infoHouseY = self.infoTotalY + 2
+end
+
+function Game:getCardRowLayout(cardCount)
+    local shown = math.max(1, math.min(cardCount, 3))
+    local spacing = self.cardW + self.cardGap
+
+    if shown > 1 then
+        local maxSpacing = math.floor((self.monitorWidth - 4 - self.cardW) / (shown - 1))
+        if maxSpacing < 1 then maxSpacing = 1 end
+        spacing = math.min(spacing, maxSpacing)
+    end
+
+    local totalWidth = self.cardW + (shown - 1) * spacing
+    local startX = math.floor((self.monitorWidth - totalWidth) / 2) + 1
+    if startX < 2 then startX = 2 end
+
+    return startX, spacing, shown
 end
 
 function Game:ensureImageSupport()
@@ -721,8 +740,8 @@ function Game:centerText(y, text)
     self.monitor.write(text)
 end
 
-function Game:cardX(index)
-    return 3 + (index - 1) * (self.cardW + self.cardGap)
+function Game:cardX(index, startX, spacing)
+    return startX + (index - 1) * spacing
 end
 
 function Game:drawCardLabelOverlay(x, y, card)
@@ -827,10 +846,21 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
     self:centerText(2, "BLACKJACK CASINO")
 
     self.monitor.setCursorPos(3, self.dealerLabelY)
-    self.monitor.write("Dealer:")
+    local dealerCodes = {}
     for i, card in ipairs(dealerHand) do
         if i > 3 then break end
-        local cx = self:cardX(i)
+        if i == 2 and not revealDealer then
+            table.insert(dealerCodes, "??")
+        else
+            table.insert(dealerCodes, card.rank .. card.suit)
+        end
+    end
+    self.monitor.write("Dealer: " .. table.concat(dealerCodes, " "))
+
+    local dealerStartX, dealerSpacing, dealerShown = self:getCardRowLayout(#dealerHand)
+    for i, card in ipairs(dealerHand) do
+        if i > dealerShown then break end
+        local cx = self:cardX(i, dealerStartX, dealerSpacing)
         if i == 2 and not revealDealer then
             self:drawHiddenCard(cx, self.dealerY)
         else
@@ -839,10 +869,17 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
     end
 
     self.monitor.setCursorPos(3, self.playerLabelY)
-    self.monitor.write("Player:")
+    local playerCodes = {}
     for i, card in ipairs(playerHand) do
         if i > 3 then break end
-        self:drawCard(self:cardX(i), self.playerY, card)
+        table.insert(playerCodes, card.rank .. card.suit)
+    end
+    self.monitor.write("Player: " .. table.concat(playerCodes, " "))
+
+    local playerStartX, playerSpacing, playerShown = self:getCardRowLayout(#playerHand)
+    for i, card in ipairs(playerHand) do
+        if i > playerShown then break end
+        self:drawCard(self:cardX(i, playerStartX, playerSpacing), self.playerY, card)
     end
 
     self.monitor.setCursorPos(3, self.infoTotalY)
