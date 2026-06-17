@@ -523,8 +523,8 @@ function Game:computeLayout()
         return row
     end
 
-    self.controlRow1Y = self.monitorHeight - 7
-    self.controlRow2Y = self.monitorHeight - 3
+    self.controlRow1Y = self.monitorHeight - 11
+    self.controlRow2Y = self.monitorHeight - 5
 
     local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
     local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
