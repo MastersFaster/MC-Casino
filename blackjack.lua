@@ -462,8 +462,6 @@ function Game.new(config)
     self.monitorWidth, self.monitorHeight = self.monitor.getSize()
     self:computeLayout()
 
-    print(self.cardW, self.cardH)
-
     self.currency = Currency.new({
         itemName = config.currencyItem or "minecraft:iron_ingot",
         playerInventory = self.layout.playerChest,
@@ -508,7 +506,7 @@ function Game:computeLayout()
     local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
-    local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
+    local maxCardHByHeight = math.floor((buttonY1 - 24) / 2)
     if maxCardHByHeight < MIN_CARD_H then
         maxCardHByHeight = MIN_CARD_H
     end
