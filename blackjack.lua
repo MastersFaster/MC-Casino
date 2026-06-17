@@ -85,16 +85,7 @@ local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
 local CARD_W = 9
-local DEALER_Y = 6
-local PLAYER_Y = 16
-local BUTTON_Y1 = 28
-local BUTTON_Y2 = 33
-
-local HIT_BOX = {x = 3, y = BUTTON_Y1, w = 12, h = 3}
-local STAND_BOX = {x = 21, y = BUTTON_Y1, w = 12, h = 3}
-local DOUBLE_BOX = {x = 3, y = BUTTON_Y2, w = 12, h = 3}
-local QUIT_BOX = {x = 21, y = BUTTON_Y2, w = 12, h = 3}
-local CASH_BOX = {x = 12, y = 38, w = 12, h = 3}
+local CARD_H = 5
 
 local function inBox(x, y, bx, by, bw, bh)
     return x >= bx and x <= bx + bw - 1 and y >= by and y <= by + bh - 1
@@ -160,6 +151,7 @@ function Game.new(config)
     })
 
     self.monitorWidth, self.monitorHeight = self.monitor.getSize()
+    self:computeLayout()
 
     self.currency = Currency.new({
         itemName = config.currencyItem or "minecraft:iron_ingot",
@@ -176,6 +168,25 @@ function Game.new(config)
     self.canDrawImages = false
 
     return self
+end
+
+function Game:computeLayout()
+    self.dealerY = 6
+    self.playerY = 16
+
+    local buttonY1 = self.monitorHeight - 11
+    local buttonY2 = buttonY1 + 5
+    local cashY = buttonY1 - 4
+
+    self.hitBox = {x = 3, y = buttonY1, w = 12, h = 3}
+    self.standBox = {x = 21, y = buttonY1, w = 12, h = 3}
+    self.doubleBox = {x = 3, y = buttonY2, w = 12, h = 3}
+    self.quitBox = {x = 21, y = buttonY2, w = 12, h = 3}
+    self.cashBox = {x = 12, y = cashY, w = 12, h = 3}
+
+    self.infoTotalY = self.playerY + CARD_H + 1
+    self.infoMoneyY = self.infoTotalY + 1
+    self.infoHouseY = self.infoTotalY + 2
 end
 
 function Game:ensureImageSupport()
@@ -210,15 +221,15 @@ function Game:cardAssetName(card)
         return nil
     end
 
-    return string.format("%s_%d.png", suit, rank)
+    return string.format("%s_%d", suit, rank)
 end
 
-function Game:drawCardImage(x, y, filename)
+function Game:drawCardImage(x, y, basename)
     if not self:ensureImageSupport() then
         return false
     end
 
-    local path = fs.combine(self.cardsDir, filename)
+    local path = fs.combine(self.cardsDir, basename .. ".nfp")
     if not fs.exists(path) then
         return false
     end
@@ -286,7 +297,7 @@ function Game:drawCard(x, y, card)
 end
 
 function Game:drawHiddenCard(x, y)
-    if self:drawCardImage(x, y, "spades_0.png") then
+    if self:drawCardImage(x, y, "spades_0") then
         return
     end
 
@@ -339,9 +350,9 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
         if i > 3 then break end
         local cx = self:cardX(i)
         if i == 2 and not revealDealer then
-            self:drawHiddenCard(cx, DEALER_Y)
+            self:drawHiddenCard(cx, self.dealerY)
         else
-            self:drawCard(cx, DEALER_Y, card)
+            self:drawCard(cx, self.dealerY, card)
         end
     end
 
@@ -349,23 +360,23 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
     self.monitor.write("Player:")
     for i, card in ipairs(playerHand) do
         if i > 3 then break end
-        self:drawCard(self:cardX(i), PLAYER_Y, card)
+        self:drawCard(self:cardX(i), self.playerY, card)
     end
 
-    self.monitor.setCursorPos(3, 22)
+    self.monitor.setCursorPos(3, self.infoTotalY)
     self.monitor.write("Total: " .. playerTotal)
 
-    self.monitor.setCursorPos(3, 23)
+    self.monitor.setCursorPos(3, self.infoMoneyY)
     self.monitor.write("Iron: " .. money .. "  Bet: " .. bet)
 
-    self.monitor.setCursorPos(3, 24)
+    self.monitor.setCursorPos(3, self.infoHouseY)
     self.monitor.write("House: " .. houseMoney)
 
-    self:drawButton(CASH_BOX.x, CASH_BOX.y, CASH_BOX.w, "Cashout")
-    self:drawButton(HIT_BOX.x, HIT_BOX.y, HIT_BOX.w, "Hit")
-    self:drawButton(STAND_BOX.x, STAND_BOX.y, STAND_BOX.w, "Stand")
-    self:drawButton(DOUBLE_BOX.x, DOUBLE_BOX.y, DOUBLE_BOX.w, "Double")
-    self:drawButton(QUIT_BOX.x, QUIT_BOX.y, QUIT_BOX.w, "Quit")
+    self:drawButton(self.cashBox.x, self.cashBox.y, self.cashBox.w, "Cashout")
+    self:drawButton(self.hitBox.x, self.hitBox.y, self.hitBox.w, "Hit")
+    self:drawButton(self.standBox.x, self.standBox.y, self.standBox.w, "Stand")
+    self:drawButton(self.doubleBox.x, self.doubleBox.y, self.doubleBox.w, "Double")
+    self:drawButton(self.quitBox.x, self.quitBox.y, self.quitBox.w, "Quit")
 end
 
 function Game:getRoundBet(money, houseMoney)
@@ -499,15 +510,15 @@ function Game:playRound()
 
         local x, y = self:waitTouch()
 
-        if inBox(x, y, CASH_BOX.x, CASH_BOX.y, CASH_BOX.w, CASH_BOX.h) then
+        if inBox(x, y, self.cashBox.x, self.cashBox.y, self.cashBox.w, self.cashBox.h) then
             self:showMessage("Cashout: take iron from player chest.", 3)
             return false
         end
 
-        if inBox(x, y, HIT_BOX.x, HIT_BOX.y, HIT_BOX.w, HIT_BOX.h) then
+        if inBox(x, y, self.hitBox.x, self.hitBox.y, self.hitBox.w, self.hitBox.h) then
             table.insert(player, table.remove(deck))
             canDouble = false
-        elseif inBox(x, y, STAND_BOX.x, STAND_BOX.y, STAND_BOX.w, STAND_BOX.h) then
+        elseif inBox(x, y, self.standBox.x, self.standBox.y, self.standBox.w, self.standBox.h) then
             revealDealer = true
             while handValue(dealer) < 17 do
                 table.insert(dealer, table.remove(deck))
@@ -545,7 +556,7 @@ function Game:playRound()
             self.monitor.write(result)
             sleep(2)
             return true
-        elseif inBox(x, y, DOUBLE_BOX.x, DOUBLE_BOX.y, DOUBLE_BOX.w, DOUBLE_BOX.h) then
+        elseif inBox(x, y, self.doubleBox.x, self.doubleBox.y, self.doubleBox.w, self.doubleBox.h) then
             local proposedBet = bet * 2
             if canDouble and self.currency:playerCanCover(proposedBet) and self.currency:houseCanCover(proposedBet) then
                 bet = proposedBet
@@ -556,7 +567,7 @@ function Game:playRound()
                 self.monitor.write("Cannot double (funds/house limit).")
                 sleep(1)
             end
-        elseif inBox(x, y, QUIT_BOX.x, QUIT_BOX.y, QUIT_BOX.w, QUIT_BOX.h) then
+        elseif inBox(x, y, self.quitBox.x, self.quitBox.y, self.quitBox.w, self.quitBox.h) then
             self:showMessage("Thanks for playing!", 2)
             return false
         end
