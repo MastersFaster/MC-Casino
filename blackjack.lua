@@ -1112,7 +1112,7 @@ local game = Game.new({
     baseBet = 5,
     currencyItem = "minecraft:iron_ingot",
     monitorScale = 0.5,
-    cardScale = 0.5,
+    cardScale = 1.2,
     layout = {
         -- Standard casino machine format:
         -- 2x3 Monitor
