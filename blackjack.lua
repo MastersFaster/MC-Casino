@@ -137,6 +137,7 @@ function Game.new(config)
         playerInventoryName = self.layout.playerChestName,
         houseInventoryName = self.layout.houseChestName
     })
+    self.currency:validateTransferRoutes()
 
     return self
 end

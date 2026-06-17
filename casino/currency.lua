@@ -41,6 +41,65 @@ local function safePeripheralName(inv, fallbackName)
     return nil
 end
 
+local function joinErrors(errors)
+    if #errors == 0 then return "unknown transfer failure" end
+    return table.concat(errors, " | ")
+end
+
+local function appendError(errors, label, err)
+    table.insert(errors, label .. ": " .. tostring(err))
+end
+
+local function tryTransfer(fromInv, toInv, fromName, toName, slot, amount)
+    local errors = {}
+
+    local okWrapper, movedWrapper = pcall(function()
+        return fromInv.pushItems(toName, slot, amount)
+    end)
+    if okWrapper then
+        return movedWrapper or 0
+    end
+    appendError(errors, "wrapper pushItems", movedWrapper)
+
+    local okPush, movedPush = pcall(function()
+        return peripheral.call(fromName, "pushItems", toName, slot, amount)
+    end)
+    if okPush then
+        return movedPush or 0
+    end
+    appendError(errors, "named pushItems", movedPush)
+
+    local okPull, movedPull = pcall(function()
+        return peripheral.call(toName, "pullItems", fromName, slot, amount)
+    end)
+    if okPull then
+        return movedPull or 0
+    end
+    appendError(errors, "named pullItems", movedPull)
+
+    return nil, joinErrors(errors)
+end
+
+function Currency:validateTransferRoutes()
+    local fromName = safePeripheralName(self.playerInventory, self.playerInventoryName)
+    local toName = safePeripheralName(self.houseInventory, self.houseInventoryName)
+
+    if not fromName or not toName then
+        error("Currency validation failed: unable to resolve player/house inventory names")
+    end
+
+    local _, forwardErr = tryTransfer(self.playerInventory, self.houseInventory, fromName, toName, 1, 0)
+    local _, reverseErr = tryTransfer(self.houseInventory, self.playerInventory, toName, fromName, 1, 0)
+
+    if forwardErr and reverseErr then
+        error(
+            "Currency transfer route validation failed between " .. fromName .. " and " .. toName ..
+            ". Ensure both inventories are visible on the same computer/modem network. " ..
+            "Forward errors: " .. forwardErr .. " || Reverse errors: " .. reverseErr
+        )
+    end
+end
+
 function Currency:move(fromInv, toInv, amount, fromNameHint, toNameHint)
     if amount <= 0 then return true end
 
@@ -56,25 +115,9 @@ function Currency:move(fromInv, toInv, amount, fromNameHint, toNameHint)
         if item.name == self.itemName then
             local toMove = math.min(item.count, remaining)
 
-            local moved = 0
-
-            local okPush, movedOrErr = pcall(function()
-                return peripheral.call(fromName, "pushItems", toName, slot, toMove)
-            end)
-
-            if okPush then
-                moved = movedOrErr or 0
-            else
-                -- Some local+modem combos reject push by name; pull from destination is a safe fallback.
-                local okPull, pulledOrErr = pcall(function()
-                    return peripheral.call(toName, "pullItems", fromName, slot, toMove)
-                end)
-
-                if okPull then
-                    moved = pulledOrErr or 0
-                else
-                    error("Transfer failed from " .. fromName .. " to " .. toName .. ": " .. tostring(movedOrErr) .. " | " .. tostring(pulledOrErr))
-                end
+            local moved, err = tryTransfer(fromInv, toInv, fromName, toName, slot, toMove)
+            if moved == nil then
+                error("Transfer failed from " .. fromName .. " to " .. toName .. ": " .. err)
             end
 
             remaining = remaining - moved
