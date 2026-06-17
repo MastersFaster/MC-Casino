@@ -32,6 +32,25 @@ local Layout = loadLocalModule("casino.layout")
 local Currency = loadLocalModule("casino.currency")
 local pullEvent = os.pullEvent
 
+local function printPeripheralBootInfo()
+    if not peripheral then return end
+
+    print("[MC-Casino] Peripheral scan on boot")
+
+    local names = peripheral.getNames()
+    table.sort(names)
+
+    if #names == 0 then
+        print("  none")
+        return
+    end
+
+    for _, name in ipairs(names) do
+        local pType = peripheral.getType(name) or "unknown"
+        print("  - " .. name .. " (" .. pType .. ")")
+    end
+end
+
 local suits = {"S", "H", "C", "D"}
 local ranks = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 
@@ -350,6 +369,8 @@ function Game:run()
         end
     end
 end
+
+printPeripheralBootInfo()
 
 local game = Game.new({
     baseBet = 5,
