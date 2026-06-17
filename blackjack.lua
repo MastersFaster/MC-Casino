@@ -1227,7 +1227,7 @@ function Game:pulseDropperByItemCount(itemCount)
                 local pulses = 0
                 for _ = 1, itemCount do
                     local ok, moved = pcall(function()
-                        return dropMethod(self.dropper, 1)
+                        return dropMethod(1)
                     end)
 
                     if not ok then
