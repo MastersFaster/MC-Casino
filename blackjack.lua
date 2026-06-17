@@ -452,6 +452,10 @@ function Game.new(config)
     self.monitor = self.layout.monitor
     self.monitorName = self.layout.monitorName
     self.monitorScale = config.monitorScale or 1
+    self.dealerLabelText = config.dealerLabelText or "Dealer"
+    self.playerLabelText = config.playerLabelText or "Player"
+    self.cardsLabelText = config.cardsLabelText or "Cards"
+    self.currentBet = config.baseBet or 5
 
     Layout.prepareMonitor(self.monitor, {
         scale = self.monitorScale,
@@ -496,52 +500,73 @@ function Game:refreshMonitorGeometry()
 end
 
 function Game:computeLayout()
-    local buttonY1 = self.monitorHeight - 11
-    local buttonY2 = buttonY1 + 5
-
     self.cardGap = 2
-    -- Size cards for the common 2-card blackjack state; when a 3rd card appears
-    -- we dynamically tighten spacing instead of shrinking the art itself.
+
+    local function buildRow(count, y)
+        local margin = 2
+        local gap = 2
+        local available = self.monitorWidth - (margin * 2) - (gap * (count - 1))
+        local buttonW = math.max(7, math.floor(available / count))
+        local row = {}
+
+        local totalW = (buttonW * count) + (gap * (count - 1))
+        local startX = math.floor((self.monitorWidth - totalW) / 2) + 1
+        for i = 1, count do
+            row[i] = {
+                x = startX + ((i - 1) * (buttonW + gap)),
+                y = y,
+                w = buttonW,
+                h = 3
+            }
+        end
+
+        return row
+    end
+
+    self.controlRow1Y = self.monitorHeight - 7
+    self.controlRow2Y = self.monitorHeight - 3
+
     local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
     local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
-    local maxCardHByHeight = math.floor((buttonY1 - 12) / 2)
-    if maxCardHByHeight < MIN_CARD_H then
-        maxCardHByHeight = MIN_CARD_H
-    end
-
-    -- Card art is portrait-oriented, so keep cards taller than they are wide.
     local desiredCardH = math.floor(self.cardW * 1.4)
-    self.cardH = clamp(desiredCardH, MIN_CARD_H, maxCardHByHeight)
-
-    self.dealerLabelY = 4
-    self.dealerY = self.dealerLabelY + 2
-    self.playerY = self.dealerY + self.cardH + 6
-    self.playerLabelY = self.playerY - 3
-
-    local cashY = buttonY1 - 4
+    self.cardH = math.max(MIN_CARD_H, desiredCardH)
 
     while true do
-        local infoTotalY = self.playerY + self.cardH + 1
-        local infoHouseY = infoTotalY + 2
-        if infoHouseY < cashY - 1 or self.cardH <= MIN_CARD_H then
+        self.dealerLabelY = 2
+        self.dealerCardsTextY = self.dealerLabelY + 1
+        self.dealerY = self.dealerCardsTextY + 1
+
+        self.playerLabelY = self.dealerY + self.cardH + 1
+        self.playerCardsTextY = self.playerLabelY + 1
+        self.playerY = self.playerCardsTextY + 1
+
+        self.totalsY = self.playerY + self.cardH + 1
+        self.dividerTopY = self.totalsY + 2
+        self.ironLabelY = self.dividerTopY + 1
+        self.ironValueY = self.ironLabelY + 1
+        self.dividerBottomY = self.ironValueY + 1
+        self.betInfoY = self.dividerBottomY + 1
+
+        if self.betInfoY <= self.controlRow1Y - 1 or self.cardH <= MIN_CARD_H then
             break
         end
+
         self.cardH = self.cardH - 1
-        self.playerY = self.dealerY + self.cardH + 6
-        self.playerLabelY = self.playerY - 3
     end
 
-    self.hitBox = {x = 3, y = buttonY1, w = 12, h = 3}
-    self.standBox = {x = 21, y = buttonY1, w = 12, h = 3}
-    self.doubleBox = {x = 3, y = buttonY2, w = 12, h = 3}
-    self.quitBox = {x = 21, y = buttonY2, w = 12, h = 3}
-    self.cashBox = {x = 12, y = cashY, w = 12, h = 3}
+    local actionRow = buildRow(3, self.controlRow1Y)
+    self.hitBox = actionRow[1]
+    self.doubleBox = actionRow[2]
+    self.standBox = actionRow[3]
 
-    self.infoTotalY = self.playerY + self.cardH + 1
-    self.infoMoneyY = self.infoTotalY + 1
-    self.infoHouseY = self.infoTotalY + 2
+    self.betMinusBox = actionRow[1]
+    self.betPlusBox = actionRow[2]
+    self.playBox = actionRow[3]
+
+    local row2 = buildRow(1, self.controlRow2Y)
+    self.cashBox = row2[1]
 end
 
 function Game:getCardRowLayout(cardCount)
@@ -822,8 +847,10 @@ function Game:drawHiddenCard(x, y)
     self.monitor.setTextColor(colors.white)
 end
 
-function Game:drawButton(x, y, w, label)
-    self.monitor.setBackgroundColor(colors.gray)
+function Game:drawButton(x, y, w, label, enabled)
+    enabled = enabled ~= false
+
+    self.monitor.setBackgroundColor(enabled and colors.gray or colors.lightGray)
     self.monitor.setTextColor(colors.white)
 
     self.monitor.setCursorPos(x, y)
@@ -842,24 +869,39 @@ function Game:drawButton(x, y, w, label)
     self.monitor.setTextColor(colors.white)
 end
 
-function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money, bet, houseMoney)
+function Game:drawDivider(y)
+    local band = "=" .. string.rep("~", math.max(0, self.monitorWidth - 2)) .. "="
+    self.monitor.setCursorPos(1, y)
+    self.monitor.write(band)
+end
+
+function Game:cardCodesText(hand, hideSecond)
+    if #hand == 0 then
+        return "-"
+    end
+
+    local out = {}
+    for i, card in ipairs(hand) do
+        if i > 3 then break end
+        if hideSecond and i == 2 then
+            table.insert(out, "??")
+        else
+            table.insert(out, card.rank .. card.suit)
+        end
+    end
+
+    return table.concat(out, " ")
+end
+
+function Game:drawTable(playerHand, dealerHand, revealDealer, money, bet, houseMoney, phase, statusText)
     self:refreshMonitorGeometry()
 
     self.monitor.clear()
 
-    self:centerText(2, "BLACKJACK CASINO")
+    self:centerText(1, "BLACKJACK CASINO")
 
-    self.monitor.setCursorPos(3, self.dealerLabelY)
-    local dealerCodes = {}
-    for i, card in ipairs(dealerHand) do
-        if i > 3 then break end
-        if i == 2 and not revealDealer then
-            table.insert(dealerCodes, "??")
-        else
-            table.insert(dealerCodes, card.rank .. card.suit)
-        end
-    end
-    self.monitor.write("Dealer: " .. table.concat(dealerCodes, " "))
+    self:centerText(self.dealerLabelY, self.dealerLabelText)
+    self:centerText(self.dealerCardsTextY, self.cardsLabelText .. ": " .. self:cardCodesText(dealerHand, not revealDealer))
 
     local dealerStartX, dealerSpacing, dealerShown = self:getCardRowLayout(#dealerHand)
     for i, card in ipairs(dealerHand) do
@@ -872,13 +914,8 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
         end
     end
 
-    self.monitor.setCursorPos(3, self.playerLabelY)
-    local playerCodes = {}
-    for i, card in ipairs(playerHand) do
-        if i > 3 then break end
-        table.insert(playerCodes, card.rank .. card.suit)
-    end
-    self.monitor.write("Player: " .. table.concat(playerCodes, " "))
+    self:centerText(self.playerLabelY, self.playerLabelText)
+    self:centerText(self.playerCardsTextY, self.cardsLabelText .. ": " .. self:cardCodesText(playerHand, false))
 
     local playerStartX, playerSpacing, playerShown = self:getCardRowLayout(#playerHand)
     for i, card in ipairs(playerHand) do
@@ -886,20 +923,38 @@ function Game:drawTable(playerHand, dealerHand, revealDealer, playerTotal, money
         self:drawCard(self:cardX(i, playerStartX, playerSpacing), self.playerY, card)
     end
 
-    self.monitor.setCursorPos(3, self.infoTotalY)
-    self.monitor.write("Total: " .. playerTotal)
+    local dealerTotalText = "-"
+    if #dealerHand > 0 then
+        dealerTotalText = revealDealer and tostring(handValue(dealerHand)) or "?"
+    end
 
-    self.monitor.setCursorPos(3, self.infoMoneyY)
-    self.monitor.write("Iron: " .. money .. "  Bet: " .. bet)
+    local playerTotalText = "-"
+    if #playerHand > 0 then
+        playerTotalText = tostring(handValue(playerHand))
+    end
 
-    self.monitor.setCursorPos(3, self.infoHouseY)
-    self.monitor.write("House: " .. houseMoney)
+    self:centerText(self.totalsY, "Dealer Total: " .. dealerTotalText .. "   Player Total: " .. playerTotalText)
 
-    self:drawButton(self.cashBox.x, self.cashBox.y, self.cashBox.w, "Cashout")
-    self:drawButton(self.hitBox.x, self.hitBox.y, self.hitBox.w, "Hit")
-    self:drawButton(self.standBox.x, self.standBox.y, self.standBox.w, "Stand")
-    self:drawButton(self.doubleBox.x, self.doubleBox.y, self.doubleBox.w, "Double")
-    self:drawButton(self.quitBox.x, self.quitBox.y, self.quitBox.w, "Quit")
+    self:drawDivider(self.dividerTopY)
+    self:centerText(self.ironLabelY, "Current Iron")
+    self:centerText(self.ironValueY, tostring(money))
+    self:drawDivider(self.dividerBottomY)
+
+    if phase == "betting" then
+        self:centerText(self.betInfoY, "Current Bet: " .. bet)
+        self:drawButton(self.betMinusBox.x, self.betMinusBox.y, self.betMinusBox.w, "-1")
+        self:drawButton(self.betPlusBox.x, self.betPlusBox.y, self.betPlusBox.w, "+1")
+        self:drawButton(self.playBox.x, self.playBox.y, self.playBox.w, "Play")
+        self:drawButton(self.cashBox.x, self.cashBox.y, self.cashBox.w, "Cashout")
+    else
+        self:centerText(self.betInfoY, "Current Bet: " .. bet .. " (locked in hand)")
+        self:drawButton(self.hitBox.x, self.hitBox.y, self.hitBox.w, "Hit")
+        self:drawButton(self.doubleBox.x, self.doubleBox.y, self.doubleBox.w, "Double")
+        self:drawButton(self.standBox.x, self.standBox.y, self.standBox.w, "Stand")
+        self:drawButton(self.cashBox.x, self.cashBox.y, self.cashBox.w, "Cashout", false)
+    end
+
+    self:centerText(self.monitorHeight, statusText or ("House Iron: " .. houseMoney))
 end
 
 function Game:getRoundBet(money, houseMoney)
@@ -908,6 +963,50 @@ function Game:getRoundBet(money, houseMoney)
     if bet > houseMoney then bet = houseMoney end
     if bet < 1 then bet = 1 end
     return bet
+end
+
+function Game:collectBetBeforeDeal(initialBet)
+    local bet = initialBet
+
+    while true do
+        self:syncHopperDeposits()
+
+        local money = self.currency:getPlayerMoney()
+        local houseMoney = self.currency:getHouseMoney()
+
+        if money <= 0 then
+            self:showMessage("Insert iron into hopper to play.", 3)
+            return nil, "no_money"
+        end
+
+        if houseMoney <= 0 then
+            self:showOutOfService("House chest empty. Cashing out.")
+            self:showMessage("Cashout: take iron from player chest.", 3)
+            return nil, "no_house"
+        end
+
+        local maxBet = math.min(money, houseMoney)
+        if maxBet < 1 then
+            maxBet = 1
+        end
+
+        bet = clamp(bet, 1, maxBet)
+
+        self:drawTable({}, {}, false, money, bet, houseMoney, "betting", "Set bet and tap Play")
+
+        local x, y = self:waitTouch()
+
+        if inBox(x, y, self.cashBox.x, self.cashBox.y, self.cashBox.w, self.cashBox.h) then
+            self:showMessage("Cashout: take iron from player chest.", 3)
+            return nil, "cashout"
+        elseif inBox(x, y, self.betMinusBox.x, self.betMinusBox.y, self.betMinusBox.w, self.betMinusBox.h) then
+            bet = math.max(1, bet - 1)
+        elseif inBox(x, y, self.betPlusBox.x, self.betPlusBox.y, self.betPlusBox.w, self.betPlusBox.h) then
+            bet = math.min(maxBet, bet + 1)
+        elseif inBox(x, y, self.playBox.x, self.playBox.y, self.playBox.w, self.playBox.h) then
+            return bet, "play"
+        end
+    end
 end
 
 function Game:showOutOfService(message)
@@ -994,7 +1093,23 @@ function Game:playRound()
         return false
     end
 
-    local bet = self:getRoundBet(money, houseMoney)
+    if houseMoney <= 0 then
+        self:showOutOfService("House chest empty. Cashing out.")
+        self:showMessage("Cashout: take iron from player chest.", 3)
+        return false
+    end
+
+    local initialBet = self.currentBet or self:getRoundBet(money, houseMoney)
+    local bet, betAction = self:collectBetBeforeDeal(initialBet)
+    if betAction == "cashout" or betAction == "no_house" then
+        return false
+    end
+    if not bet then
+        return true
+    end
+
+    self.currentBet = bet
+
     if bet > houseMoney then
         self:showOutOfService("House cannot cover bets.")
         self:showMessage("Cashout: take iron from player chest.", 3)
@@ -1011,6 +1126,7 @@ function Game:playRound()
 
     local revealDealer = false
     local canDouble = true
+    local statusText = "Tap Hit / Double / Stand"
 
     while true do
         self:syncHopperDeposits()
@@ -1018,15 +1134,15 @@ function Game:playRound()
         local playerTotal = handValue(player)
         money = self.currency:getPlayerMoney()
         houseMoney = self.currency:getHouseMoney()
-        self:drawTable(player, dealer, revealDealer, playerTotal, money, bet, houseMoney)
+        self:drawTable(player, dealer, revealDealer, money, bet, houseMoney, "playing", statusText)
 
         if playerTotal > 21 then
             if not self.currency:settleLoss(bet) then
                 self:showMessage("Loss transfer failed.", 3)
                 return false
             end
-            self.monitor.setCursorPos(3, 27)
-            self.monitor.write("Bust! You lose.")
+            statusText = "Bust! You lose."
+            self:drawTable(player, dealer, revealDealer, money, bet, houseMoney, "playing", statusText)
             sleep(2)
             return true
         end
@@ -1034,8 +1150,7 @@ function Game:playRound()
         local x, y = self:waitTouch()
 
         if inBox(x, y, self.cashBox.x, self.cashBox.y, self.cashBox.w, self.cashBox.h) then
-            self:showMessage("Cashout: take iron from player chest.", 3)
-            return false
+            statusText = "Cashout is available between hands."
         end
 
         if inBox(x, y, self.hitBox.x, self.hitBox.y, self.hitBox.w, self.hitBox.h) then
@@ -1045,7 +1160,7 @@ function Game:playRound()
             revealDealer = true
             while handValue(dealer) < 17 do
                 table.insert(dealer, table.remove(deck))
-                self:drawTable(player, dealer, true, playerTotal, money, bet, houseMoney)
+                self:drawTable(player, dealer, true, money, bet, houseMoney, "playing", "Dealer drawing...")
                 sleep(0.3)
             end
 
@@ -1074,9 +1189,7 @@ function Game:playRound()
 
             money = self.currency:getPlayerMoney()
             houseMoney = self.currency:getHouseMoney()
-            self:drawTable(player, dealer, true, playerTotal, money, bet, houseMoney)
-            self.monitor.setCursorPos(3, 27)
-            self.monitor.write(result)
+            self:drawTable(player, dealer, true, money, bet, houseMoney, "playing", result)
             sleep(2)
             return true
         elseif inBox(x, y, self.doubleBox.x, self.doubleBox.y, self.doubleBox.w, self.doubleBox.h) then
@@ -1085,14 +1198,11 @@ function Game:playRound()
                 bet = proposedBet
                 table.insert(player, table.remove(deck))
                 canDouble = false
+                statusText = "Bet doubled to " .. bet
             else
-                self.monitor.setCursorPos(3, 27)
-                self.monitor.write("Cannot double (funds/house limit).")
+                statusText = "Cannot double (funds/house limit)."
                 sleep(1)
             end
-        elseif inBox(x, y, self.quitBox.x, self.quitBox.y, self.quitBox.w, self.quitBox.h) then
-            self:showMessage("Thanks for playing!", 2)
-            return false
         end
     end
 end
