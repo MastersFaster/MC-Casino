@@ -444,7 +444,7 @@ function Game.new(config)
 
     local self = setmetatable({}, Game)
     self.baseBet = config.baseBet or 5
-    self.cardScale = tonumber(config.cardScale) or 1.0
+    self.cardScale = tonumber(config.cardScale) or 0.5
     if self.cardScale < 0.5 then self.cardScale = 0.5 end
     if self.cardScale > 2.0 then self.cardScale = 2.0 end
 
@@ -503,7 +503,7 @@ function Game:computeLayout()
     -- Size cards for the common 2-card blackjack state; when a 3rd card appears
     -- we dynamically tighten spacing instead of shrinking the art itself.
     local maxCardWByWidth = math.floor((self.monitorWidth - 6) / 2)
-    local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.25)
+    local scaledCardW = math.floor(maxCardWByWidth * self.cardScale + 0.5)
     self.cardW = clamp(scaledCardW, MIN_CARD_W, math.min(MAX_CARD_W, maxCardWByWidth))
 
     local maxCardHByHeight = math.floor((buttonY1 - 14) / 2)
